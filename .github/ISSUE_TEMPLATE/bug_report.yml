@@ -4,7 +4,7 @@ labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: |
+      value: >-
         Thanks for taking the time to report this. The mod logs what it does, so the output of `pll status` /
         `pll selftest` and the audit log usually show the cause quickly.
   - type: input
@@ -65,7 +65,7 @@ body:
     id: logs
     attributes:
       label: Logs
-      description: |
+      description: >-
         Attach (drag and drop) the audit log of the session, `Mods/PartyLearningLoot/Logs/audit_*.jsonl`, and the
         server log. Lines with `[PartyLearningLoot]`, `[MODS]` or `ERR` are the most useful. Audit logs contain player
         names; you can replace them before uploading.
