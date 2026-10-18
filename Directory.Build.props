@@ -36,10 +36,14 @@
   </PropertyGroup>
 
   <!--
-    Release builds map the local checkout folder to "/_/", so a published DLL carries no machine-specific paths
-    (PDB reference) and builds from different folders are byte-identical. Debug builds keep real paths for debugging.
+    Release builds are reproducible: the local checkout folder is mapped to "/_/" (no machine-specific paths in the
+    DLL's PDB reference) and Source Link is off (it would embed the checkout folder and the commit into the PDB, whose
+    ID ends up in the DLL). The same sources, game version and SDK therefore build a byte-identical DLL in any folder,
+    with or without git. Debug builds keep real paths for debugging.
   -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PathMap>$(MSBuildThisFileDirectory)=/_/</PathMap>
+    <EnableSourceLink>false</EnableSourceLink>
+    <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
   </PropertyGroup>
 </Project>
