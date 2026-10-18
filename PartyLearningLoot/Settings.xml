@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  PartyLearningLoot settings.
+
+  Most values can be applied at runtime with the console command "pll reload".
+  Settings marked [restart] are only read when the server starts.
+  Unknown names or invalid values are reported in the server log and fall back to the default.
+-->
+<PartyLearningLoot>
+
+  <!-- ===== Party-wide loot weighting ===== -->
+
+  <!-- Master switch for party-wide weighting of learning material. -->
+  <property name="Enabled" value="true" />
+
+  <!-- Compute and log everything, but keep vanilla loot (useful to preview the effect). -->
+  <property name="DryRun" value="false" />
+
+  <!-- Apply to world containers (shelves, magazine racks, crates, ...). -->
+  <property name="ApplyToContainers" value="true" />
+
+  <!-- Apply to entity loot (zombie loot bags, airdrops). -->
+  <property name="ApplyToLootBags" value="true" />
+
+  <!-- Learning material that is weighted party-wide. -->
+  <property name="IncludeSkillMagazines" value="true" />
+  <property name="IncludePerkBooks" value="true" />
+
+  <!-- Also weight all other perk-boosted loot party-wide: ammo, weapons, tools, armor, medical supplies, food, seeds, ...
+       (e.g. a member's Gunslinger raises 9mm and .44 ammo for everyone who opens). Same rule as for learning material:
+       per perk only the strongest member counts. Noticeably more loot of every kind your perks cover. -->
+  <property name="IncludeOtherLoot" value="false" />
+
+  <!-- Which party members count: 0 = unlimited (default), -1 = PartySharedKillRange of the server, >0 = metres. -->
+  <property name="MaxMemberDistance" value="0" />
+
+  <!-- Dead members still count (vanilla party loot stage does the same). -->
+  <property name="IncludeDeadMembers" value="true" />
+
+  <!-- Spectators do not count by default. -->
+  <property name="IncludeSpectators" value="false" />
+
+  <!-- Advanced: comma-separated loot tags to add to the learning set / to never merge (only existing tags are accepted). -->
+  <property name="ExtraLearningTags" value="" />
+  <property name="ExcludedLearningTags" value="" />
+
+  <!-- ===== Shared Reading (optional) ===== -->
+
+  <!-- [restart] When a party member reads a book, magazine or schematic, every active member learns it as well. -->
+  <property name="SharedReading" value="false" />
+
+  <!-- [restart] Categories that are shared. -->
+  <property name="SharedReadingBooks" value="true" />
+  <property name="SharedReadingMagazines" value="true" />
+  <property name="SharedReadingSchematics" value="true" />
+
+  <!-- Members also receive the experience a read grants (as if they had read it themselves). -->
+  <property name="SharedReadingShareXp" value="true" />
+
+  <!-- 0 = unlimited (default), -1 = PartySharedKillRange of the server, >0 = metres. -->
+  <property name="SharedReadingMaxDistance" value="0" />
+
+  <!-- Show a toolbelt message to members who actually learned something. -->
+  <property name="SharedReadingNotify" value="true" />
+
+  <!-- Message text, placeholders: {reader} {item} -->
+  <property name="SharedReadingMessage" value="Learned with {reader}: {item}" />
+
+  <!-- ===== Diagnostics ===== -->
+
+  <!-- Audit log in Mods/PartyLearningLoot/Logs: Off | Summary | Detailed -->
+  <property name="LogLevel" value="Summary" />
+
+</PartyLearningLoot>

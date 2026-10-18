@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    Copy this file to "GamePath.user.props" (same folder) and point it at your
+    7 Days to Die installation. The copy is ignored by git.
+
+    Alternatives: set the environment variable SDTD_GAME_PATH or pass
+    -p:SdtdGamePath="..." to dotnet build.
+  -->
+  <PropertyGroup>
+    <SdtdGamePathLocal>D:\SteamLibrary\steamapps\common\7 Days To Die</SdtdGamePathLocal>
+  </PropertyGroup>
+</Project>

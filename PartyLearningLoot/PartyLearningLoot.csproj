@@ -1,0 +1,92 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Library</OutputType>
+    <AssemblyName>PartyLearningLoot</AssemblyName>
+    <RootNamespace>PartyLearningLoot</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <DebugType>portable</DebugType>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <!-- Version is read from ModInfo.xml (single source of truth), see PllReadModInfoVersion. -->
+    <Version>0.0.0</Version>
+  </PropertyGroup>
+
+  <!-- Game references: compile against the installed game, never copied to the output. -->
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(SdtdManagedPath)Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="LogLibrary">
+      <HintPath>$(SdtdManagedPath)LogLibrary.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(SdtdManagedPath)UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(SdtdManagedPath)UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Noemax.GZip">
+      <HintPath>$(SdtdManagedPath)Noemax.GZip.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(SdtdHarmonyPath)0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="System.Xml.Linq" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="ModInfo.xml" />
+    <None Include="Settings.xml" />
+  </ItemGroup>
+
+  <!-- Fail early with a readable message when the game cannot be found. -->
+  <Target Name="PllCheckGamePath" BeforeTargets="ResolveAssemblyReferences;CoreCompile">
+    <Error Condition="!Exists('$(SdtdManagedPath)Assembly-CSharp.dll')"
+           Text="PartyLearningLoot: Assembly-CSharp.dll not found under '$(SdtdManagedPath)'. Set the game path via -p:SdtdGamePath=..., the SDTD_GAME_PATH environment variable or GamePath.user.props (see GamePath.user.props.example)." />
+    <Error Condition="!Exists('$(SdtdHarmonyPath)0Harmony.dll')"
+           Text="PartyLearningLoot: 0Harmony.dll not found under '$(SdtdHarmonyPath)'. The game's Mods\0_TFP_Harmony folder is required to build." />
+  </Target>
+
+  <!-- ModInfo.xml is the only place that defines the mod version. -->
+  <Target Name="PllReadModInfoVersion" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo">
+    <XmlPeek XmlInputPath="$(MSBuildProjectDirectory)\ModInfo.xml" Query="/xml/Version/@value">
+      <Output TaskParameter="Result" PropertyName="PllModVersion" />
+    </XmlPeek>
+    <Error Condition="'$(PllModVersion)' == ''" Text="PartyLearningLoot: ModInfo.xml does not define &lt;Version value=&quot;...&quot;/&gt;." />
+    <PropertyGroup>
+      <Version>$(PllModVersion)</Version>
+      <VersionPrefix>$(PllModVersion)</VersionPrefix>
+      <AssemblyVersion>$(PllModVersion).0</AssemblyVersion>
+      <FileVersion>$(PllModVersion).0</FileVersion>
+      <InformationalVersion>$(PllModVersion)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
+
+  <!--
+    Opt-in deploy into the game's Mods folder:
+      dotnet build -c Release -p:PllDeploy=true
+    Copies the DLL and ModInfo.xml; Settings.xml only if the server has none yet (admin edits survive).
+    Never deploys PDBs, 0Harmony or test assemblies (the loader loads every DLL in the mod folder).
+  -->
+  <Target Name="PllDeploy" AfterTargets="Build" Condition="'$(PllDeploy)' == 'true'">
+    <MakeDir Directories="$(SdtdModDeployPath)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(SdtdModDeployPath)" Retries="0" ContinueOnError="true" />
+    <Error Condition="'$(MSBuildLastTaskResult)' == 'false'"
+           Text="PartyLearningLoot: deploy failed, '$(SdtdModDeployPath)$(TargetFileName)' is locked or not writable. Stop the game or dedicated server and build again." />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\ModInfo.xml" DestinationFolder="$(SdtdModDeployPath)" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\Settings.xml" DestinationFolder="$(SdtdModDeployPath)"
+          Condition="!Exists('$(SdtdModDeployPath)Settings.xml')" />
+    <Delete Files="$(SdtdModDeployPath)$(TargetName).pdb" />
+    <Message Importance="high" Text="PartyLearningLoot $(Version) deployed to $(SdtdModDeployPath)" />
+  </Target>
+
+</Project>

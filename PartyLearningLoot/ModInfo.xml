@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<xml>
+  <Name value="PartyLearningLoot" />
+  <DisplayName value="Party Learning Loot" />
+  <Description value="Server-side: skill magazines and perk books in loot are weighted by the learning perks of every active party member (best value per perk, never stacked). Optionally all other perk-weighted loot (ammo, weapons, tools, ...) too, and Shared Reading lets the whole party learn from one read. Singleplayer stays vanilla." />
+  <Author value="softdot.studio" />
+  <Version value="1.1.0" />
+  <Website value="https://github.com/o0TheRat1010o/PartyLearningLoot" />
+</xml>

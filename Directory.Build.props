@@ -1,0 +1,45 @@
+<Project>
+  <!--
+    Shared build settings, imported by every project below this folder.
+
+    Game path resolution (first match wins):
+      1. MSBuild property      dotnet build -p:SdtdGamePath="D:\Games\7 Days To Die"
+      2. Environment variable  SDTD_GAME_PATH
+      3. Local file            GamePath.user.props (copy of GamePath.user.props.example, never committed)
+      4. Default Steam path    C:\Program Files (x86)\Steam\steamapps\common\7 Days To Die
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)GamePath.user.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)GamePath.user.props')" />
+
+  <PropertyGroup>
+    <SdtdGamePath Condition="'$(SdtdGamePath)' == '' and '$(SDTD_GAME_PATH)' != ''">$(SDTD_GAME_PATH)</SdtdGamePath>
+    <SdtdGamePath Condition="'$(SdtdGamePath)' == '' and '$(SdtdGamePathLocal)' != ''">$(SdtdGamePathLocal)</SdtdGamePath>
+    <SdtdGamePath Condition="'$(SdtdGamePath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\7 Days To Die</SdtdGamePath>
+    <!-- Normalized copy with a trailing slash: a property given with -p: is read-only, so it cannot be fixed in place. -->
+    <SdtdGameDir>$([MSBuild]::EnsureTrailingSlash('$(SdtdGamePath)'))</SdtdGameDir>
+    <SdtdManagedPath>$(SdtdGameDir)7DaysToDie_Data\Managed\</SdtdManagedPath>
+    <SdtdHarmonyPath>$(SdtdGameDir)Mods\0_TFP_Harmony\</SdtdHarmonyPath>
+    <SdtdModDeployPath>$(SdtdGameDir)Mods\PartyLearningLoot\</SdtdModDeployPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <Deterministic>true</Deterministic>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Company>softdot.studio</Company>
+    <Authors>softdot.studio</Authors>
+    <Product>PartyLearningLoot</Product>
+    <Copyright>Copyright (c) 2026 softdot.studio</Copyright>
+    <NeutralLanguage>en</NeutralLanguage>
+  </PropertyGroup>
+
+  <!--
+    Release builds map the local checkout folder to "/_/", so a published DLL carries no machine-specific paths
+    (PDB reference) and builds from different folders are byte-identical. Debug builds keep real paths for debugging.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <PathMap>$(MSBuildThisFileDirectory)=/_/</PathMap>
+  </PropertyGroup>
+</Project>

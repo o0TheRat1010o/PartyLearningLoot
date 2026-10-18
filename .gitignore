@@ -1,0 +1,38 @@
+# ---------------------------------------------------------------------------
+# Whitelist .gitignore
+#
+# Everything at the repository root is ignored by default. Only the files and
+# folders that belong to the mod are re-included below, so local files
+# (personal build settings, release archives, audit logs, IDE state) never end
+# up in the repository by accident.
+# ---------------------------------------------------------------------------
+
+/*
+
+# Repository meta
+!/.gitignore
+!/.gitattributes
+!/.editorconfig
+!/.github/
+
+# Documentation shipped with the mod
+!/README.md
+!/LICENSE
+!/CHANGELOG.md
+
+# Build entry points
+!/PartyLearningLoot.sln
+!/Directory.Build.props
+!/GamePath.user.props.example
+
+# Mod source code
+!/PartyLearningLoot/
+
+# Build output and IDE state inside the source folder stay local
+/PartyLearningLoot/bin/
+/PartyLearningLoot/obj/
+/PartyLearningLoot/.vs/
+/PartyLearningLoot/**/*.user
+/PartyLearningLoot/**/*.suo
+/PartyLearningLoot/**/*.DotSettings.user
+/PartyLearningLoot/Logs/

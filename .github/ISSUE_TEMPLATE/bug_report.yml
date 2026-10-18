@@ -1,0 +1,71 @@
+name: Bug report
+description: Something does not work as the README describes.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The mod logs what it does, so the output of `pll status` /
+        `pll selftest` and the audit log usually show the cause quickly.
+  - type: input
+    id: mod-version
+    attributes:
+      label: Mod version
+      description: Shown by `pll status` and in `Mods/PartyLearningLoot/ModInfo.xml`.
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: input
+    id: game-version
+    attributes:
+      label: Game version
+      placeholder: "V 3.3.0 (b18)"
+    validations:
+      required: true
+  - type: dropdown
+    id: server-type
+    attributes:
+      label: Server type
+      options:
+        - Dedicated server
+        - Listen server (the host plays)
+        - Singleplayer
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Two players in a party, one with Lucky Looter ...
+        2. Open a bookcase ...
+  - type: textarea
+    id: settings
+    attributes:
+      label: Changed settings
+      description: Settings in `Settings.xml` that differ from the defaults (or "none").
+  - type: textarea
+    id: other-mods
+    attributes:
+      label: Other mods
+      description: Other mods installed on the server, especially ones that change loot, perks, books or buffs.
+  - type: textarea
+    id: console
+    attributes:
+      label: Output of `pll status` and `pll selftest`
+      description: Run both in the server console (F1 on a listen server) and paste the output.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Attach (drag and drop) the audit log of the session, `Mods/PartyLearningLoot/Logs/audit_*.jsonl`, and the
+        server log. Lines with `[PartyLearningLoot]`, `[MODS]` or `ERR` are the most useful. Audit logs contain player
+        names; you can replace them before uploading.
