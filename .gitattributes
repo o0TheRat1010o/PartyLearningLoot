@@ -7,8 +7,9 @@
 *.props text eol=crlf
 *.ps1   text eol=crlf
 
-# Source and data files
-*.cs    text diff=csharp
+# Source and data files. C# sources are LF in every checkout, so a Release build produces the same DLL on any
+# machine (line endings are part of the compiled source).
+*.cs    text diff=csharp eol=lf
 *.xml   text
 *.md    text
 *.json  text
