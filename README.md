@@ -214,5 +214,7 @@ The game path can also be given with `-p:SdtdGamePath=...` or the environment va
 
 ## License
 
-MIT - see [LICENSE](LICENSE). Made by softdot.studio. 7 Days to Die is a trademark of The Fun Pimps; this is an
-unofficial fan project.
+MIT - see [LICENSE](LICENSE). Made by softdot.studio.
+
+7 Days to Die is a trademark of The Fun Pimps Entertainment LLC. This mod is an unofficial fan project and is not
+affiliated with or endorsed by The Fun Pimps.
