@@ -207,11 +207,11 @@ internal static class SelfTest
         float extra = DeltaSelector.SelectPerk(1f, 1f, new[] { 11f }).Extra;
         Expect("complete quirk not amplified", 1f * DeltaSelector.ApplyExtra(1f, extra, 0.05f, 1f), 1.5f);
 
-        // First review's counterexample: perk 1 opener complete (base 1), member +20; perk 2 opener +10 -> 12 >= vanilla 11.
+        // Two perks: perk 1 opener complete (base 1), member +20; perk 2 opener +10 -> 12, never below vanilla 11.
         float extra1 = DeltaSelector.SelectPerk(1f, 1f, new[] { 21f }).Extra;
-        Expect("counterexample stays above vanilla", 1f * DeltaSelector.ApplyExtra(11f, extra1, 0.05f, 1f), 12f);
+        Expect("two perks never below vanilla", 1f * DeltaSelector.ApplyExtra(11f, extra1, 0.05f, 1f), 12f);
         return failures.Count == 0
-            ? (Pass, "8 cases incl. the 'complete' quirk (1.5 instead of 11) and the old counterexample (12 >= vanilla 11)")
+            ? (Pass, "8 cases incl. the 'complete' quirk (1.5 instead of 11) and two perks never below vanilla (12 >= 11)")
             : (Fail, string.Join("; ", failures));
     }
 

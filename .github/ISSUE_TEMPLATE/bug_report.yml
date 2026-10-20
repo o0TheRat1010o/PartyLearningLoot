@@ -6,7 +6,8 @@ body:
     attributes:
       value: >-
         Thanks for taking the time to report this. The mod logs what it does, so the output of `pll status` /
-        `pll selftest` and the audit log usually show the cause quickly.
+        `pll selftest` and the audit log usually show the cause quickly. Issues are public: please replace player
+        names, Steam/EOS IDs, IP addresses and user names in file paths before posting.
   - type: input
     id: mod-version
     attributes:
@@ -67,5 +68,6 @@ body:
       label: Logs
       description: >-
         Attach (drag and drop) the audit log of the session, `Mods/PartyLearningLoot/Logs/audit_*.jsonl`, and the
-        server log. Lines with `[PartyLearningLoot]`, `[MODS]` or `ERR` are the most useful. Audit logs contain player
-        names; you can replace them before uploading.
+        server log. Lines with `[PartyLearningLoot]`, `[MODS]` or `ERR` are the most useful. Both logs contain player
+        names and the server log also contains Steam/EOS IDs: replace each of them consistently (for example with
+        Player1, Player2) before uploading.

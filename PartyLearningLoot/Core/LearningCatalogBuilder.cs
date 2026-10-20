@@ -70,7 +70,7 @@ public sealed class CatalogOptions
 
     /// <summary>
     /// Checks whether a tag name already exists in the game. Unknown names are never parsed into tags,
-    /// because parsing registers new tag bits globally. Null accepts every name (unit tests).
+    /// because parsing registers new tag bits globally. Null accepts every name (when no game is loaded).
     /// </summary>
     public Func<string, bool> IsKnownTag { get; set; }
 }

@@ -6,7 +6,7 @@ namespace PartyLearningLoot.Engine;
 
 /// <summary>
 /// Game-log output with the [PartyLearningLoot] prefix. Warnings and errors are mirrored into the audit log,
-/// so the post-session analysis sees everything the server log shows.
+/// so an analysis of the audit log sees everything the server log shows.
 /// </summary>
 internal static class ModLog
 {

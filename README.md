@@ -85,7 +85,8 @@ XP of a read, and members who are dead learn after respawning.
 
 There is no installer: the mod is a folder that goes into the game's `Mods` folder.
 
-1. Download `PartyLearningLoot-<version>.zip` from the [releases page](https://github.com/o0TheRat1010o/PartyLearningLoot/releases/latest).
+1. Download `PartyLearningLoot-<version>.zip` from the [releases page](https://github.com/o0TheRat1010o/PartyLearningLoot/releases/latest)
+   (under *Assets*). Do not download *Source code (zip)*: that is the source code for developers, not the mod.
 2. Extract it into the `Mods` folder of the dedicated server, or of the host's game for a listen server
    (`%APPDATA%\7DaysToDie\Mods` works as well). The result must look like this:
 
@@ -106,8 +107,9 @@ There is no installer: the mod is a folder that goes into the game's `Mods` fold
 3. Start the server. The log shows `[PartyLearningLoot] ready: ... selftest PASS`, and `pll status` in the console (F1)
    shows the mod's state.
 
-Listen server: the host must start the game **without EasyAntiCheat** (launcher option "Play without EAC"), because the
-game only loads DLL mods without it. Joining players install nothing and can keep EAC on.
+Listen server: the host must start the game **without EasyAntiCheat**, because the game only loads DLL mods without it.
+When Steam asks how to start the game, choose **Launch game without EAC** (or choose **Show game launcher** and untick
+**Use EasyAntiCheat (EAC)** there). Joining players install nothing and can keep EAC on.
 
 **Updating:** replace the files with those of the new version but keep your own `Settings.xml`; settings that a new
 version adds use their default until you add them. **Uninstalling:** delete the `Mods/PartyLearningLoot` folder.
@@ -147,7 +149,7 @@ the server starts. Invalid values are reported in the log and fall back to the d
 | `pll reload` | Re-read `Settings.xml`. |
 | `pll loglevel off\|summary\|detailed` | Change the audit level for this session. |
 | `pll selftest` | Run all self checks (PASS/WARN/FAIL). Run it while a party is online to test the live merge as well. |
-| `pll explain [player]` | Vanilla vs. party weight per learning tag for a player's party, with the member and perk that wins. |
+| `pll explain [player]` | Vanilla vs. party weight per merged tag (learning material, plus other loot with `IncludeOtherLoot`) for a player's party, with the member and perk that wins. A few unmerged tags are listed as a check that they stay vanilla. |
 | `pll simulate <lootContainer> [runs] [player]` | Paired vanilla/party loot simulation of a container, e.g. `pll simulate cntBookcaseFull 2000`. Nothing is spawned. |
 
 ## Balance note

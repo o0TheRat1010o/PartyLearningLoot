@@ -389,7 +389,7 @@ internal static class AuditLog
         }
         catch
         {
-            // GameIO is unavailable in unit-test hosts; the primary folder is enough there.
+            // GameIO is unavailable without a running game; the primary folder is enough there.
         }
         return new[] { primary, fallback }.Where(d => !string.IsNullOrEmpty(d)).ToArray();
     }

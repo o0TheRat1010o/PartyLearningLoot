@@ -254,7 +254,10 @@ internal sealed class GameCatalog
         return drift;
     }
 
-    /// <summary>Short summary for logs and the status command, e.g. "42 learning + 32 other loot tags, 30 perks".</summary>
+    /// <summary>
+    /// Short summary for logs and the status command, e.g. "42 learning tags, 32 unmerged, 29 perks" in V 3.3, or
+    /// "42 learning + 32 other loot tags, 0 unmerged, 30 perks" with IncludeOtherLoot.
+    /// </summary>
     public string Describe()
     {
         return $"{Data.LearningTags.Count} learning" + (Data.IncludesOtherLoot ? $" + {Data.OtherLootTags.Count} other loot" : string.Empty) +

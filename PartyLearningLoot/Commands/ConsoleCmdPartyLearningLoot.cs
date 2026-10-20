@@ -24,7 +24,7 @@ public sealed class ConsoleCmdPartyLearningLoot : ConsoleCmdAbstract
                "  pll reload                              - re-read Settings.xml (Shared Reading switches need a restart)\n" +
                "  pll loglevel off|summary|detailed       - change the audit log level for this session\n" +
                "  pll selftest                            - run all self checks (PASS/WARN/FAIL)\n" +
-               "  pll explain [player]                    - vanilla vs party weight per learning tag for a player's party\n" +
+               "  pll explain [player]                    - vanilla vs party weight per merged tag for a player's party\n" +
                $"  pll simulate <lootContainer> [runs] [player] - paired vanilla/party loot simulation (default {LootSimulator.DefaultRuns} runs)\n" +
                "Player: entity id, name or platform id; defaults to yourself (or the only player online).";
     }
