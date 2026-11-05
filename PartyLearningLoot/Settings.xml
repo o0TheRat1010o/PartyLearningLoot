@@ -10,10 +10,10 @@
 
   <!-- ===== Party-wide loot weighting ===== -->
 
-  <!-- Master switch for party-wide weighting of learning material. -->
+  <!-- Master switch for the party bonus on learning material. -->
   <property name="Enabled" value="true" />
 
-  <!-- Compute and log everything, but keep vanilla loot (useful to preview the effect). -->
+  <!-- Plan and log the bonus, but draw none: loot stays exactly vanilla (useful to preview the effect). -->
   <property name="DryRun" value="false" />
 
   <!-- Apply to world containers (shelves, magazine racks, crates, ...). -->
@@ -22,12 +22,12 @@
   <!-- Apply to entity loot (zombie loot bags, airdrops). -->
   <property name="ApplyToLootBags" value="true" />
 
-  <!-- Learning material that is weighted party-wide. -->
+  <!-- Learning material that gets the party bonus. -->
   <property name="IncludeSkillMagazines" value="true" />
   <property name="IncludePerkBooks" value="true" />
 
-  <!-- Also weight all other perk-boosted loot party-wide: ammo, weapons, tools, armor, medical supplies, food, seeds, ...
-       (e.g. a member's Gunslinger raises 9mm and .44 ammo for everyone who opens). Same rule as for learning material:
+  <!-- Also give all other perk-boosted loot a party bonus: ammo, weapons, tools, armor, medical supplies, food, seeds, ...
+       (e.g. a member's Gunslinger adds 9mm and .44 ammo for everyone who opens). Same rule as for learning material:
        per perk only the strongest member counts. Noticeably more loot of every kind your perks cover. -->
   <property name="IncludeOtherLoot" value="false" />
 

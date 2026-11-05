@@ -1,9 +1,9 @@
 # Party Learning Loot
 
-**A server-side mod for 7 Days to Die (V 3.3, b18) that lets the whole party benefit from learning loot.**
+**A server-side mod for 7 Days to Die (V 3.4, b10) that lets the whole party benefit from learning loot.**
 
 [![Latest release](https://img.shields.io/github/v/release/o0TheRat1010o/PartyLearningLoot?label=release)](https://github.com/o0TheRat1010o/PartyLearningLoot/releases/latest)
-![7 Days to Die V 3.3 (b18)](https://img.shields.io/badge/7%20Days%20to%20Die-V%203.3%20%28b18%29-8b0000)
+![7 Days to Die V 3.4 (b10)](https://img.shields.io/badge/7%20Days%20to%20Die-V%203.4%20%28b10%29-8b0000)
 ![Server-side only](https://img.shields.io/badge/clients-nothing%20to%20install-2e7d32)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -14,13 +14,15 @@ builds - lose learning progress, because usually only one of them opens the cont
 With Party Learning Loot, **the learning perks of every active party member count** when a container is opened:
 
 - For each perk only the strongest member counts, so identical perks **never stack**.
-- Different perks of different members combine like the perks of a single player.
-- The opener keeps everything vanilla gives them: loot is **never worse than vanilla**.
-- Everything else stays vanilla: loot quantity, loot stage, Treasure Hunter / Bookworm rolls, traders, quest rewards,
-  bundles. **Singleplayer and players without a party are exactly vanilla.**
+- Different perks of different members combine like the perks of a single person holding all of them.
+- **Nothing is taken away.** The opener's loot is drawn exactly as in vanilla; the party's perks add **extra draws on
+  top**. Every item is found at least as often as in vanilla, and items the party's perks favour at least as often as
+  a single player with all those perks would find them.
+- Everything else stays vanilla: loot stage, Treasure Hunter / Bookworm rolls, traders, quest rewards, bundles.
+  **Singleplayer and players without a party are exactly vanilla.**
 
 Optional **other loot** (off by default): the same party rule for everything else perks weight - ammo, weapons,
-tools, armor, medical supplies, food and seeds (e.g. a member's *Gunslinger* raises 9 mm and .44 ammo for everyone).
+tools, armor, medical supplies, food and seeds (e.g. a member's *Gunslinger* adds 9 mm and .44 ammo for everyone).
 
 Optional **Shared Reading** (off by default): when a party member reads a book, magazine or schematic, every active
 member learns it too - perk, crafting points, recipe and XP, exactly as if they had read it themselves.
@@ -37,29 +39,53 @@ listen game).
 ## How it works
 
 7 Days to Die weighs every loot entry with the `LootProb` passive effect of the opener's perks (for example
-*Dead Eye* raises *Rifle World* magazines and the *Sniper* book series). Party Learning Loot hooks the evaluation of each
-perk while a container's loot is generated:
+*Dead Eye* raises *Rifle World* magazines and the *Sniper* book series). Party Learning Loot works out what the party's
+perks would add to the weight of each entry while a container's loot is generated:
 
 ```
 extra(perk)  = max(0, Δ best member - Δ opener)          for every perk
-loot weight  = vanilla weight + Σ extra(perk) × entry weight before the perks
+party weight = vanilla weight + Σ extra(perk) × entry weight before the perks
 ```
 
 Each Δ is the perk's bonus computed by the game's own code with that player's own perk level and requirements
-(crafting skill below 100, book series not finished, ...). The opener keeps exactly what vanilla gives them; a member
-only adds the part of a perk that is stronger than the opener's version of the same perk. Vanilla's "complete" rule (a
-finished crafting skill sets an entry's weight to 1) is never multiplied into a member's bonus.
+(crafting skill below 100, book series not finished, ...). A member only adds the part of a perk that is stronger than
+the opener's version of the same perk. Vanilla's "complete" rule (a finished crafting skill sets an entry's weight to 1)
+is never multiplied into a member's bonus.
 
-By default only learning material is affected: an entry is merged only if its tags belong to a skill magazine or
+Loot lists draw an entry in proportion to its weight, so a heavier entry lowers the chance of every other entry of the
+list. That is how perks work for one player - but applied to a party it would take items away from the player who
+opens the container. So the mod **never changes a weight**. Instead:
+
+1. The container is generated exactly as in vanilla, with the opener's own perks.
+2. For every list that was drawn from, the mod compares the opener's shares with the shares one person with all the
+   party's perks would have. Where the party raises the share of an entry, that is the *gain* `g`; the gains of a list
+   add up to `G` (always below 1).
+3. For every vanilla draw from the list, the game's own loot code makes an **extra draw with probability `G`**, taken
+   from a list that holds only the entries with a gain, in proportion to their gains. The expected finds of an entry
+   after `n` draws are `n × max(vanilla share, party share)`: never less than vanilla, never less than the
+   single player with all perks. Lists reached by an extra draw get their own bonus in the same way.
+
+The extra draws run on private random streams, so the game's own random numbers (and with them the vanilla loot) are
+exactly what they would have been without the mod. Lists whose entries are each rolled on their own (such as the skill
+magazines in food and medical piles) give a raised entry an extra chance of
+`max(0, min(party chance, 1) - min(vanilla chance, 1))`.
+
+By default only learning material is affected: an entry gets a bonus only if its tags belong to a skill magazine or
 perk-book series and to nothing else (weapons, ammo, food ... stay vanilla). The set of learning tags is derived from the
-game data at start-up (42 tags / 29 perks in V 3.3), so XML mods that add magazines or book series are picked up
+game data at start-up (42 tags / 29 perks in V 3.4), so XML mods that add magazines or book series are picked up
 automatically.
 
-With `IncludeOtherLoot` every other tag a perk weights is merged by the same rule as well (32 more tags in V 3.3: ammo,
+With `IncludeOtherLoot` every other tag a perk weights gets the same bonus as well (32 more tags in V 3.4: ammo,
 weapon and tool classes, armor, medical supplies, vehicle and workstation parts, food, seeds, legendary parts; 30 perks
 take part). Only *percentage* bonuses of members are shared, never changes of an entry's base weight: special loot that a
 perk unlocks from weight 0 (Master Chef rank 2: dumpster food and seeds) keeps depending on the opener, just like the
 "complete" rule above.
+
+Limits: a list where one entry rolls a random number in its requirements is not planned, because its weights change
+with every look; neither is a list in which an ordinary draw is mixed with entries that are rolled on their own. A
+container that draws without replacement (`unique_items`; the game's own tables do not use it) gets no bonus, and neither
+does a container with no free slot left. An entry whose bonus is smaller than the list's average bonus keeps its vanilla
+share but gains nothing.
 
 **Shared Reading** extends the configs in memory when the server loads them (the files on disk are not changed): every
 readable book, magazine and schematic gets a tiny, invisible marker, and for every item a hidden "apply" buff is defined
@@ -74,7 +100,7 @@ XP of a read, and members who are dead learn after respawning.
 
 | | |
 |---|---|
-| Game version | 7 Days to Die **V 3.3.0 (b18)**. Other versions: the mod checks every hook at start-up and disables a feature cleanly if something changed (see `pll selftest`). |
+| Game version | 7 Days to Die **V 3.4.0 (b10)**; the loot tables and perks it relies on are unchanged since V 3.3.0 (b18). Other versions: the mod checks every hook at start-up and disables a feature cleanly if something changed (see `pll selftest`). |
 | Dedicated server | Supported; DLL mods load even with EasyAntiCheat enabled. Players need nothing. |
 | Listen server (host plays) | Supported; the **host** must start the game **without EasyAntiCheat** (DLL mods require it). Other players need nothing. |
 | Singleplayer | Loads, but behaves exactly like vanilla (there is no party). |
@@ -102,7 +128,7 @@ There is no installer: the mod is a folder that goes into the game's `Mods` fold
    ```
 
    The game only looks one folder deep: if the files end up in a nested folder such as
-   `Mods/PartyLearningLoot-1.1.0/PartyLearningLoot/`, the mod is not loaded (the log then says
+   `Mods/PartyLearningLoot-2.0.0/PartyLearningLoot/`, the mod is not loaded (the log then says
    `Folder ... does not contain a ModInfo.xml, ignoring`).
 3. Start the server. The log shows `[PartyLearningLoot] ready: ... selftest PASS`, and `pll status` in the console (F1)
    shows the mod's state.
@@ -121,13 +147,13 @@ the server starts. Invalid values are reported in the log and fall back to the d
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `Enabled` | `true` | Master switch for party-wide weighting. |
-| `DryRun` | `false` | Compute and log everything but keep vanilla loot. |
+| `Enabled` | `true` | Master switch for the party bonus. |
+| `DryRun` | `false` | Plan and log the bonus but draw none: loot stays exactly vanilla. |
 | `ApplyToContainers` | `true` | World containers (shelves, magazine racks, crates ...). |
 | `ApplyToLootBags` | `true` | Zombie loot bags and airdrops. |
 | `IncludeSkillMagazines` | `true` | Crafting skill magazines are learning material. |
 | `IncludePerkBooks` | `true` | Perk book series are learning material. |
-| `IncludeOtherLoot` | `false` | Also weight all other perk-boosted loot party-wide (ammo, weapons, tools, armor, medical, food, seeds, ...). |
+| `IncludeOtherLoot` | `false` | Also give all other perk-boosted loot the party bonus (ammo, weapons, tools, armor, medical, food, seeds, ...). |
 | `MaxMemberDistance` | `0` | `0` = unlimited, `-1` = the server's `PartySharedKillRange`, `>0` = metres. |
 | `IncludeDeadMembers` | `true` | Dead members still count (like vanilla party loot stage). |
 | `IncludeSpectators` | `false` | Spectators do not count. |
@@ -149,30 +175,36 @@ the server starts. Invalid values are reported in the log and fall back to the d
 | `pll reload` | Re-read `Settings.xml`. |
 | `pll loglevel off\|summary\|detailed` | Change the audit level for this session. |
 | `pll selftest` | Run all self checks (PASS/WARN/FAIL). Run it while a party is online to test the live merge as well. |
-| `pll explain [player]` | Vanilla vs. party weight per merged tag (learning material, plus other loot with `IncludeOtherLoot`) for a player's party, with the member and perk that wins. A few unmerged tags are listed as a check that they stay vanilla. |
-| `pll simulate <lootContainer> [runs] [player]` | Paired vanilla/party loot simulation of a container, e.g. `pll simulate cntBookcaseFull 2000`. Nothing is spawned. |
+| `pll explain [player] [lootContainer]` | The opener's weight, the extra weight the party adds and the weight of a person with all perks, per tag (learning material, plus other loot with `IncludeOtherLoot`) for a player's party, with the member and perk that wins. A few unmerged tags are listed as a check that they stay vanilla. With a container (e.g. `pll explain bookcase`) also the bonus of its loot lists: shares, gains and `G`. |
+| `pll simulate <lootContainer> [runs] [player] [item=<name>]` | Paired vanilla/party loot simulation of a container, e.g. `pll simulate bookcase 2000`: every run is spawned twice with the same seed, once without and once with the bonus, and no item may ever be found less often with it. Shows the change for learning items, other perk loot and all items, the five items with the lowest change and the number of bonus draws against the expected number. `item=toolBeaker` follows any single item, with or without a perk tag. Nothing is spawned in the world; the game does not tick meanwhile, so a run stops after 5 seconds (up to 60 seconds for more than 2,500 runs). |
 
 ## Balance note
 
 Perk bonuses for learning loot are large in vanilla (+200 % to +1000 % per perk, armor perks up to +2000 %), and they
-are designed for one player. A party of specialists will therefore find noticeably more magazines and books - that is
-the point of the mod, but expect faster progression. Different perks still combine (e.g. three armor specialists), only
-identical perks are capped at the best member. Use `pll simulate` to see the effect for your party, or `DryRun` to
-preview it in the log.
+are designed for one player. A party of specialists will therefore find more magazines and books: the bonus is made of
+**extra draws**, so a party finds more loot than a single player would - that is the price of taking nothing away from
+anybody, and the point of the mod, but expect faster progression. For a party of two players (estimated over about
+1,500 container openings) the extra draws amount to about **+7 % more finds overall** with learning material only (the
+learning items themselves: about +38 %) and roughly **+15 % overall** with `IncludeOtherLoot`. Zombie loot bags give
+about 1 to 2 more items, cars and backpacks about half an item, junk piles, cupboards and barrels hardly anything.
+Different perks still combine (e.g. three armor specialists), only identical perks are capped at the best member. Use
+`pll simulate` to see the effect for your party, or `DryRun` to preview it in the log.
 
-`IncludeOtherLoot` has a much bigger effect: the same +200 % to +1000 % per perk then applies party-wide to ammo,
-weapons, tools, armor, food and seeds. Loot groups pick their items by weight, so a party finds clearly more of what its
-specialists' perks cover - and correspondingly less of the other items of the same loot groups, exactly as a single
-player with all those perks would. That is why it is off by default.
+`IncludeOtherLoot` has a much bigger effect: the same +200 % to +1000 % per perk then adds extra draws party-wide for
+ammo, weapons, tools, armor, food and seeds. That is why it is off by default.
+
+Version 2.0 changed how the bonus is made: version 1.x raised the weights of the entries the party's perks favour,
+which lowered the chance of all other items of the same list - including items the opener's own perks favour. See the
+changelog.
 
 ## Audit log and diagnostics
 
 Every session writes `Mods/PartyLearningLoot/Logs/audit_<date>.jsonl` (files roll over at 50 MB; at most 10 are kept,
-files of the running session are never deleted). At `Summary` it contains one line per merged container and per shared
-read; `Detailed` adds every merge decision, the exact vanilla value for comparison and runtime invariant checks. Shared
-reads are confirmed against the members' next data syncs. Warnings and errors also appear in the server log with the
-prefix `[PartyLearningLoot]`. If something goes wrong repeatedly, a circuit breaker switches merging off (vanilla loot)
-until `pll reload`.
+files of the running session are never deleted). At `Summary` it contains one line per merged container (with what the
+bonus planned, drew and added) and per shared read; `Detailed` adds every merge decision, the weights and shares of every
+planned list and runtime invariant checks. Shared reads are confirmed against the members' next data syncs. Warnings and
+errors also appear in the server log with the prefix `[PartyLearningLoot]`. If something goes wrong repeatedly, a circuit
+breaker switches merging off (vanilla loot) until `pll reload`.
 
 ## FAQ
 
@@ -193,6 +225,15 @@ magazine point with that member's own Nerd outfit and Intellect mastery, just li
 
 **Does it also cover ammo, weapons or food?** Only with `IncludeOtherLoot=true` (applies with `pll reload`). Then every
 perk bonus on loot counts party-wide, with the same rule: per perk the strongest member, never stacked.
+
+**Is any item worse than in vanilla?** No. The opener's loot is drawn exactly as in vanilla and the party only adds draws
+on top, so every item is found at least as often as before. Where a container has no free slot left, the vanilla loot
+stays complete and the bonus gets less room.
+
+**Why do I find more loot than with 1.x?** Version 1.x moved shares between items (more of the party's favourites,
+less of everything else); version 2.0 adds draws instead, so the total grows. See the balance note.
+
+**Does it change how traders, quests or bundles work?** No: those never pass through the mod.
 
 **Can a cheating player abuse Shared Reading?** The server trusts a client's report that it read an item, just as
 vanilla trusts clients with their own buffs and progress. A modified client could therefore claim reads of items it
