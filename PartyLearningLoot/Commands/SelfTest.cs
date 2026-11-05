@@ -52,6 +52,8 @@ internal static class SelfTest
         Check(result, "loot_tables", CheckLootTables);
         Check(result, "scope_stack", CheckScopes);
         Check(result, "delta_rule", CheckDeltaRule);
+        Check(result, "bonus_math", BonusCheck.CheckMath);
+        Check(result, "bonus_pipeline", BonusCheck.CheckPipeline);
         Check(result, "merge_context", () => MergeContext.IsClean() ? (Pass, "clean") : (Fail, "context holds state outside a spawn"));
         Check(result, "event_param_guard", CheckEventParamGuard);
         Check(result, "live_party", CheckLiveParty);
@@ -61,6 +63,29 @@ internal static class SelfTest
 
         Report(result);
         return result;
+    }
+
+    /// <summary>
+    /// The live check alone, for the party of the given player (called when a party forms or changes): a short observation
+    /// and paired simulation with the real members. Writes a "selftest" record; returns false when no member was active.
+    /// </summary>
+    public static bool RunLive(string _trigger, EntityPlayer _player)
+    {
+        GameCatalog catalog = GameCatalog.Current;
+        ModSettings settings = PartyLearningLootMod.Settings;
+        if (catalog == null || _player == null || MergeContext.Active || BonusEngine.Armed)
+        {
+            return false;
+        }
+        PartySnapshot snapshot = PartySnapshot.Capture(_player, settings.MaxMemberDistance, settings.IncludeDeadMembers, settings.IncludeSpectators);
+        if (snapshot.VanillaReason != null)
+        {
+            return false;
+        }
+        var result = new SelfTestResult { Trigger = _trigger };
+        Check(result, "live_party", () => LiveCheck(_player, snapshot, settings, catalog));
+        Report(result);
+        return true;
     }
 
     public static IEnumerable<string> Format(SelfTestResult _result)
@@ -144,9 +169,9 @@ internal static class SelfTest
         List<string> drift = catalog.DriftFromB18();
         if (drift.Count == 0)
         {
-            return (Pass, "matches V 3.3 (b18)" + (catalog.Data.IncludesOtherLoot ? " with other loot" : string.Empty) + ": " + catalog.Describe());
+            return (Pass, "matches the V 3.3 / V 3.4 catalog" + (catalog.Data.IncludesOtherLoot ? " with other loot" : string.Empty) + ": " + catalog.Describe());
         }
-        return (Warn, (defaults ? "game data differs from b18 (update or XML mod): " : "differs from b18 because of the learning settings: ") + string.Join("; ", drift));
+        return (Warn, (defaults ? "game data differs from the expected V 3.3 / V 3.4 catalog (update or XML mod): " : "differs from the expected catalog because of the learning settings: ") + string.Join("; ", drift));
     }
 
     private static (string, string) CheckLootTables()
@@ -161,7 +186,8 @@ internal static class SelfTest
         {
             return (Fail, $"no eligible entry in {scan.Groups} groups / {scan.Containers} containers");
         }
-        string detail = $"{scan.Eligible} eligible entries ({scan.EligibleGroupRefs} group refs) in {scan.Groups} groups and {scan.Containers} containers";
+        string detail = $"{scan.Eligible} eligible entries ({scan.EligibleGroupRefs} group refs) in {scan.Groups} groups and {scan.Containers} containers; " +
+                        $"{scan.Lists} lists carry them ({scan.PickLists} pick, {scan.AllLists} all, {scan.ListsWithForceProb + scan.ListsWithRequirementProblem} left alone)";
         return scan.Mixed == 0
             ? (Pass, detail + ", no mixed entries")
             : (Warn, detail + $", {scan.Mixed} mixed merged/unmerged entries stay vanilla: " + string.Join(", ", scan.MixedExamples));
@@ -200,21 +226,20 @@ internal static class SelfTest
         Expect("tie keeps vanilla", DeltaSelector.SelectPerk(1f, 5f, new[] { 5f }).WinnerIndex, -1);
         Expect("invalid member ignored", DeltaSelector.SelectPerk(1f, 3f, new[] { float.NaN }).Extra, 0f);
         Expect("best of many", DeltaSelector.SelectPerk(2f, 2f, new[] { 4f, 9f, 6f }).Extra, 7f);
-        Expect("apply without quirk", DeltaSelector.ApplyExtra(3f, 8f, 0.5f, 0.5f), 11f);
+        Expect("gain without quirk", DeltaSelector.GainWeight(8f, 0.5f, 0.5f), 4f);
 
         // Vanilla quirk: crafting complete sets the base to 1. Food magazine (veryLow 0.05): opener complete (vanilla 1.0),
         // member Master Chef +10 (alone 0.55). The member's bonus is counted at the normal weight: 1 + 0.05 * 10 = 1.5.
         float extra = DeltaSelector.SelectPerk(1f, 1f, new[] { 11f }).Extra;
-        Expect("complete quirk not amplified", 1f * DeltaSelector.ApplyExtra(1f, extra, 0.05f, 1f), 1.5f);
+        Expect("complete quirk not amplified", 1f * 1f + DeltaSelector.GainWeight(extra, 0.05f, 1f), 1.5f);
 
-        // Two perks: perk 1 opener complete (base 1), member +20; perk 2 opener +10 -> 12, never below vanilla 11.
+        // Two perks: perk 1 opener complete (base 1), member +20; perk 2 opener +10 -> 11, the party adds 0.05 * 20.
         float extra1 = DeltaSelector.SelectPerk(1f, 1f, new[] { 21f }).Extra;
-        Expect("two perks never below vanilla", 1f * DeltaSelector.ApplyExtra(11f, extra1, 0.05f, 1f), 12f);
+        Expect("two perks never below vanilla", 1f * 11f + DeltaSelector.GainWeight(extra1, 0.05f, 1f), 12f);
         return failures.Count == 0
-            ? (Pass, "8 cases incl. the 'complete' quirk (1.5 instead of 11) and two perks never below vanilla (12 >= 11)")
+            ? (Pass, "8 cases incl. the 'complete' quirk (weight 1.5 instead of 11) and two perks never below vanilla (12 >= 11)")
             : (Fail, string.Join("; ", failures));
     }
-
     private static (string, string) CheckEventParamGuard()
     {
         var original = new MinEventParams();
@@ -228,6 +253,10 @@ internal static class SelfTest
         bool untouched = EventParamGuard.SameState(original, MinEventParams.CachedEventParam);
         return detectsChange && restores && untouched ? (Pass, "snapshot, compare and restore work") : (Fail, $"detects={detectsChange} restores={restores} untouched={untouched}");
     }
+
+    /// <summary>Paired runs and time of the short simulation the live check adds (it must not hold up the game).</summary>
+    public const int LiveRuns = 200;
+    public const double LiveSeconds = 0.15;
 
     private static (string, string) CheckLiveParty()
     {
@@ -245,19 +274,60 @@ internal static class SelfTest
             {
                 continue;
             }
-            ExplainResult explain = MergeExplainer.Explain(player, settings);
-            if (explain.Error != null)
-            {
-                return (Fail, explain.Error);
-            }
-            int raised = explain.Rows.Count(r => r.Merged && r.Party > r.Vanilla);
-            return explain.Ok
-                ? (Pass, $"{PartySnapshot.DisplayName(player)} + {snapshot.Members.Count} member(s): {explain.Rows.Count(r => r.Merged)} merged tags >= vanilla ({raised} raised), {explain.Rows.Count(r => !r.Merged)} probes unchanged, context clean")
-                : (Fail, string.Join("; ", explain.Problems));
+            return LiveCheck(player, snapshot, settings, catalog);
         }
         return (Skip, "no party with an active member online (run 'pll selftest' again during play)");
     }
 
+    /// <summary>
+    /// The live check for one real party: every merged tag is observed through the game's code, the loot lists of a sample
+    /// container are planned, and a short paired simulation of that container must show no item below vanilla and the
+    /// planned number of bonus draws.
+    /// </summary>
+    internal static (string, string) LiveCheck(EntityPlayer _player, PartySnapshot _snapshot, ModSettings _settings, GameCatalog _catalog)
+    {
+        string container = _catalog.SampleContainer;
+        ExplainResult explain = MergeExplainer.Explain(_player, _settings, container);
+        if (explain.Error != null)
+        {
+            return (Fail, explain.Error);
+        }
+        int raised = explain.Rows.Count(r => r.Merged && r.Gain > 0f);
+        string head = $"{PartySnapshot.DisplayName(_player)} + {_snapshot.Members.Count} member(s): {explain.Rows.Count(r => r.Merged)} merged tags observed ({raised} raised), " +
+                      $"{explain.Rows.Count(r => !r.Merged)} probes unchanged, {explain.Lists.Count} lists of '{container}' planned";
+        if (!explain.Ok)
+        {
+            return (Fail, head + ": " + string.Join("; ", explain.Problems.Take(3)));
+        }
+        if (container == null)
+        {
+            return (Pass, head + ", context clean");
+        }
+        SimulationResult simulation = LootSimulator.Run(container, LiveRuns, _player, _settings, null, LiveSeconds);
+        if (simulation.Error != null && simulation.Runs == 0)
+        {
+            return (Fail, head + ": simulation: " + simulation.Error);
+        }
+        var problems = new List<string>();
+        if (simulation.Items.RunsWithItemBelowVanilla > 0)
+        {
+            problems.Add($"{simulation.Items.RunsWithItemBelowVanilla} of {simulation.Items.Runs} simulated runs had an item below vanilla");
+        }
+        if (!simulation.Draws.Within())
+        {
+            problems.Add($"{simulation.Draws.Observed:0} bonus draws against {simulation.Draws.Expected:0.0} expected (z {simulation.Draws.Z:0.0})");
+        }
+        if (simulation.Violations > 0)
+        {
+            problems.Add($"{simulation.Violations} invariant violation(s): {string.Join(", ", simulation.ViolationRules)}");
+        }
+        if (simulation.Error != null)
+        {
+            problems.Add(simulation.Error);
+        }
+        string detail = head + $"; {simulation.Runs} paired runs: 0 below vanilla, {simulation.Draws.Observed:0} bonus draws ({simulation.Draws.Expected:0.0} expected)";
+        return problems.Count == 0 ? (Pass, detail + ", context clean") : (Fail, head + ": " + string.Join("; ", problems));
+    }
     private static (string, string) CheckSharedReading()
     {
         if (!SharedReadingService.Installed)

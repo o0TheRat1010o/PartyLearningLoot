@@ -24,8 +24,8 @@ public sealed class ConsoleCmdPartyLearningLoot : ConsoleCmdAbstract
                "  pll reload                              - re-read Settings.xml (Shared Reading switches need a restart)\n" +
                "  pll loglevel off|summary|detailed       - change the audit log level for this session\n" +
                "  pll selftest                            - run all self checks (PASS/WARN/FAIL)\n" +
-               "  pll explain [player]                    - vanilla vs party weight per merged tag for a player's party\n" +
-               $"  pll simulate <lootContainer> [runs] [player] - paired vanilla/party loot simulation (default {LootSimulator.DefaultRuns} runs)\n" +
+               "  pll explain [player] [lootContainer]    - vanilla, extra and party weight per merged tag for a player's party; with a container also the bonus of its loot lists\n" +
+               $"  pll simulate <lootContainer> [runs] [player] [item=<name>] - paired vanilla/party loot simulation (default {LootSimulator.DefaultRuns} runs); item=<name> follows any one item\n" +
                "Player: entity id, name or platform id; defaults to yourself (or the only player online).";
     }
 
@@ -50,8 +50,21 @@ public sealed class ConsoleCmdPartyLearningLoot : ConsoleCmdAbstract
                     break;
                 case "explain":
                 {
-                    EntityPlayer player = ResolvePlayer(_params.Count > 1 ? _params[1] : null, _senderInfo, out string error);
-                    Output(player == null ? new[] { "explain: " + error } : MergeExplainer.Format(MergeExplainer.Explain(player, PartyLearningLootMod.Settings)));
+                    string playerArgument = null;
+                    string containerArgument = null;
+                    foreach (string argument in _params.Skip(1))
+                    {
+                        if (containerArgument == null && LootContainer.GetLootContainer(argument, false) != null)
+                        {
+                            containerArgument = argument;
+                        }
+                        else
+                        {
+                            playerArgument = argument;
+                        }
+                    }
+                    EntityPlayer player = ResolvePlayer(playerArgument, _senderInfo, out string error);
+                    Output(player == null ? new[] { "explain: " + error } : MergeExplainer.Format(MergeExplainer.Explain(player, PartyLearningLootMod.Settings, containerArgument)));
                     break;
                 }
                 case "simulate":
@@ -78,7 +91,7 @@ public sealed class ConsoleCmdPartyLearningLoot : ConsoleCmdAbstract
         var table = new TextTable("Item", "Value");
         table.Add("Version", $"{PartyLearningLootMod.ModVersion} (DLL {PartyLearningLootMod.AssemblyVersion()}), game {Constants.cVersionInformation.LongString}");
         table.Add("Session", PartyLearningLootMod.SessionActive ? $"active since {RuntimeStats.SessionStartUtc:HH:mm:ss} UTC" : "no world hosted");
-        table.Add("Merging", !settings.Enabled ? "disabled" : MergeEngine.BreakerOpen ? "BREAKER OPEN (vanilla until pll reload)" : settings.DryRun ? "dry run (computed, loot stays vanilla)" : "enabled");
+        table.Add("Merging", !settings.Enabled ? "disabled" : MergeEngine.BreakerOpen ? "BREAKER OPEN (vanilla until pll reload)" : settings.DryRun ? "dry run (planned and logged, no bonus drawn)" : "enabled");
         table.Add("Applies to", $"containers={settings.ApplyToContainers}, loot bags={settings.ApplyToLootBags}, magazines={settings.IncludeSkillMagazines}, books={settings.IncludePerkBooks}, other loot={settings.IncludeOtherLoot}");
         table.Add("Members", $"distance={DescribeDistance(settings.MaxMemberDistance)}, dead={settings.IncludeDeadMembers}, spectators={settings.IncludeSpectators}");
         foreach (PatchGroupStatus group in PatchInstaller.Groups)
@@ -97,6 +110,10 @@ public sealed class ConsoleCmdPartyLearningLoot : ConsoleCmdAbstract
                                   ?? (injection == null || injection.Injected.Count == 0 ? "no items injected" : "no apply buffs in the client buffs.xml")));
         string reasons = string.Join(", ", RuntimeStats.VanillaReasons.OrderByDescending(r => r.Value).Select(r => $"{r.Key} {r.Value}"));
         table.Add("Spawns", $"merged {RuntimeStats.SpawnsMerged} (avg {RuntimeStats.MergedMsAverage:0.000} ms, max {RuntimeStats.MergedMsMax:0.000} ms, {RuntimeStats.MemberWins} member wins), vanilla {RuntimeStats.SpawnsVanilla}{(reasons.Length > 0 ? " (" + reasons + ")" : string.Empty)}");
+        table.Add("Bonus", $"{RuntimeStats.BonusPlannedDraws} draws planned ({RuntimeStats.BonusExpectedDraws:0.0} expected), {RuntimeStats.BonusCalls} calls, {RuntimeStats.BonusItemsAdded} items added " +
+                           $"({RuntimeStats.BonusLearningItemsAdded} learning), plan {(RuntimeStats.SpawnsMerged == 0 ? 0d : RuntimeStats.BonusMsPlanTotal / RuntimeStats.SpawnsMerged):0.000} ms and draw " +
+                           $"{(RuntimeStats.SpawnsMerged == 0 ? 0d : RuntimeStats.BonusMsDrawTotal / RuntimeStats.SpawnsMerged):0.000} ms per spawn" +
+                           (RuntimeStats.BonusSkipped.Count > 0 ? ", skipped: " + string.Join(", ", RuntimeStats.BonusSkipped.OrderBy(r => r.Key, StringComparer.Ordinal).Select(r => $"{r.Key} {r.Value}")) : string.Empty));
         table.Add("Shared reads", $"{RuntimeStats.SharedReads} (learned {RuntimeStats.SharedMemberLearnings}, xp grants {RuntimeStats.SharedXpGrants}, rejected {RuntimeStats.SharedReadsRejected}, rate limited {RuntimeStats.SharedReadsRateLimited})");
         table.Add("Confirmations", $"confirmed {RuntimeStats.ConfirmConfirmed}, pending {SyncConfirmationTracker.PendingCount}, mismatch warnings {RuntimeStats.ConfirmMismatchWarnings}, failed {RuntimeStats.ConfirmFailed}, unconfirmed {RuntimeStats.ConfirmUnconfirmed}");
         table.Add("Health", $"errors {ModLog.ErrorCount}, warnings {ModLog.WarningCount}, invariant violations {RuntimeStats.InvariantViolations}, merge errors {RuntimeStats.MergeErrors}");
@@ -196,22 +213,27 @@ public sealed class ConsoleCmdPartyLearningLoot : ConsoleCmdAbstract
 
     private static IEnumerable<string> Simulate(List<string> _params, CommandSenderInfo _sender)
     {
+        const string ItemPrefix = "item=";
         if (_params.Count < 2)
         {
-            return new[] { "Usage: pll simulate <lootContainer> [runs] [player]" };
+            return new[] { "Usage: pll simulate <lootContainer> [runs] [player] [item=<name>]" };
         }
         int runs = LootSimulator.DefaultRuns;
         string playerArg = null;
-        if (_params.Count > 2)
+        string focusItem = null;
+        foreach (string argument in _params.Skip(2))
         {
-            if (int.TryParse(_params[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
+            if (argument.StartsWith(ItemPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                focusItem = argument.Substring(ItemPrefix.Length);
+            }
+            else if (int.TryParse(argument, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
             {
                 runs = Math.Max(1, Math.Min(LootSimulator.MaxRuns, parsed));
-                playerArg = _params.Count > 3 ? _params[3] : null;
             }
             else
             {
-                playerArg = _params[2];
+                playerArg = argument;
             }
         }
         EntityPlayer player = ResolvePlayer(playerArg, _sender, out string error);
@@ -219,9 +241,8 @@ public sealed class ConsoleCmdPartyLearningLoot : ConsoleCmdAbstract
         {
             return new[] { "simulate: " + error };
         }
-        return LootSimulator.Format(LootSimulator.Run(_params[1], runs, player, PartyLearningLootMod.Settings));
+        return LootSimulator.Format(LootSimulator.Run(_params[1], runs, player, PartyLearningLootMod.Settings, focusItem));
     }
-
     // ----- helpers ------------------------------------------------------------------------------
 
     private static EntityPlayer ResolvePlayer(string _argument, CommandSenderInfo _sender, out string _error)

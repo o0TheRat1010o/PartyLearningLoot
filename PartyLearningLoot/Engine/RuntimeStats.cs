@@ -24,6 +24,19 @@ internal static class RuntimeStats
     public static long InvariantViolations;
     public static long MergeErrors;
 
+    // The bonus (merged spawns of real openers only; dry runs plan but draw nothing).
+    public static long BonusVisits;
+    public static long BonusPlans;
+    public static long BonusCalls;
+    public static long BonusPlannedDraws;
+    public static double BonusExpectedDraws;
+    public static double BonusRoundingVariance;
+    public static long BonusItemsAdded;
+    public static long BonusLearningItemsAdded;
+    public static double BonusMsPlanTotal;
+    public static double BonusMsDrawTotal;
+    public static readonly Dictionary<string, long> BonusSkipped = new Dictionary<string, long>(StringComparer.Ordinal);
+
     public static long SharedReads;
     public static long SharedReadsRejected;
     public static long SharedReadsRateLimited;
@@ -43,6 +56,9 @@ internal static class RuntimeStats
         VanillaReasons.Clear();
         MergedMsTotal = MergedMsMax = 0;
         MemberEvaluations = CacheHits = MemberWins = LearningItemsInMergedSpawns = OtherLootItemsInMergedSpawns = InvariantViolations = MergeErrors = 0;
+        BonusVisits = BonusPlans = BonusCalls = BonusPlannedDraws = BonusItemsAdded = BonusLearningItemsAdded = 0;
+        BonusExpectedDraws = BonusRoundingVariance = BonusMsPlanTotal = BonusMsDrawTotal = 0d;
+        BonusSkipped.Clear();
         SharedReads = SharedReadsRejected = SharedReadsRateLimited = SharedMemberLearnings = SharedXpGrants = SharedPackets = 0;
         ConfirmConfirmed = ConfirmMismatchWarnings = ConfirmFailed = ConfirmUnconfirmed = 0;
     }
@@ -69,6 +85,29 @@ internal static class RuntimeStats
         MemberWins += _trace.MemberWins;
         LearningItemsInMergedSpawns += _learningItems;
         OtherLootItemsInMergedSpawns += _otherLootItems;
+
+        BonusTrace bonus = _trace.Bonus;
+        BonusVisits += bonus.Visits;
+        BonusPlans += bonus.Plans;
+        BonusCalls += bonus.Calls;
+        BonusPlannedDraws += bonus.PlannedDraws;
+        BonusExpectedDraws += bonus.ExpectedDraws;
+        BonusRoundingVariance += bonus.RoundingVariance;
+        BonusMsPlanTotal += bonus.MsPlan;
+        BonusMsDrawTotal += bonus.MsBonus;
+        foreach (BonusAddedItem item in bonus.Added)
+        {
+            BonusItemsAdded += item.Count;
+            if (item.Learn != null)
+            {
+                BonusLearningItemsAdded += item.Count;
+            }
+        }
+        foreach (KeyValuePair<string, int> skipped in bonus.Skipped)
+        {
+            BonusSkipped.TryGetValue(skipped.Key, out long count);
+            BonusSkipped[skipped.Key] = count + skipped.Value;
+        }
     }
 
     public static double MergedMsAverage => SpawnsMerged == 0 ? 0d : MergedMsTotal / SpawnsMerged;
@@ -92,6 +131,23 @@ internal static class RuntimeStats
         foreach (KeyValuePair<string, long> reason in VanillaReasons.OrderBy(r => r.Key, StringComparer.Ordinal))
         {
             _record.Prop(reason.Key, reason.Value);
+        }
+        _record.EndObject().EndObject();
+        _record.BeginObject("bonus")
+            .Prop("visits", BonusVisits)
+            .Prop("plans", BonusPlans)
+            .Prop("calls", BonusCalls)
+            .Prop("planned", BonusPlannedDraws)
+            .Prop("expected", Math.Round(BonusExpectedDraws, 6))
+            .Prop("variance", Math.Round(BonusRoundingVariance, 6))
+            .Prop("items", BonusItemsAdded)
+            .Prop("learning_items", BonusLearningItemsAdded)
+            .Prop("ms_plan", Math.Round(BonusMsPlanTotal, 3))
+            .Prop("ms_draw", Math.Round(BonusMsDrawTotal, 3));
+        _record.BeginObject("skipped");
+        foreach (KeyValuePair<string, long> skipped in BonusSkipped.OrderBy(r => r.Key, StringComparer.Ordinal))
+        {
+            _record.Prop(skipped.Key, skipped.Value);
         }
         _record.EndObject().EndObject();
         _record.BeginObject("shared_reading")

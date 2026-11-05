@@ -6,13 +6,14 @@ using PartyLearningLoot.Core;
 namespace PartyLearningLoot.Engine;
 
 /// <summary>
-/// Party-wide LootProb merge.
+/// Party-wide LootProb observation.
 ///
-/// <see cref="MergeClass"/> runs in the ProgressionClass.ModifyValue postfix for the opener's own evaluation of each
-/// perk: it evaluates the same (patched) vanilla method for every member with the member's own level and requirements
-/// and records <c>extra = max(0, best member Δ − opener Δ)</c> (see <see cref="DeltaSelector"/>). The opener's values are
-/// never touched there. <see cref="ApplyProgressionExtra"/> runs in the Progression.ModifyValue postfix and adds the
-/// accumulated extra once, scaled to the base before the progression evaluation, so vanilla's "complete" base_set quirk
+/// While the bonus planner probes an entry (<see cref="MergeContext.Planning"/>), <see cref="MergeClass"/> runs in the
+/// ProgressionClass.ModifyValue postfix for the opener's own evaluation of each perk: it evaluates the same (patched)
+/// vanilla method for every member with the member's own level and requirements and records
+/// <c>extra = max(0, best member Δ − opener Δ)</c> (see <see cref="DeltaSelector"/>). Nothing is written to the game's
+/// values. <see cref="RecordGain"/> runs in the Progression.ModifyValue postfix and turns the accumulated extra into the
+/// weight it would add, scaled to the base before the progression evaluation, so vanilla's "complete" base_set quirk
 /// cannot multiply member bonuses. Member results are cached per (perk, tag content, input) within one activation;
 /// CachedEventParam and the member contexts are restored after every member evaluation.
 /// </summary>
@@ -105,25 +106,21 @@ internal static class MergeEngine
     }
 
     /// <summary>
-    /// End of the opener's progression evaluation: adds the accumulated extra (not in dry run) and remembers the
-    /// numbers for the getProbability audit.
+    /// End of the opener's progression evaluation inside a probe: turns the accumulated extra into the weight the party
+    /// adds to the entry (<c>extra · b₀</c>) and hands it to the planner. The game's values are not touched.
     /// </summary>
-    public static void ApplyProgressionExtra(ref float _perc, float _baseFinal)
+    public static void RecordGain(float _baseFinal)
     {
         float extra = MergeContext.ProgressionExtra;
         float baseRef = MergeContext.ProgressionBase;
-        float applied = 0f;
-        if (extra > 0f && (!MergeContext.DryRun || MergeContext.ForceApply))
-        {
-            float merged = DeltaSelector.ApplyExtra(_perc, extra, baseRef, _baseFinal);
-            applied = merged - _perc;
-            _perc = merged;
-        }
-        MergeContext.RecordProgression(baseRef, _baseFinal, extra, applied);
-        if (!MergeContext.InAudit && extra > 0f)
-        {
-            MergeContext.Trace.ExtraApplications++;
-        }
+        MergeContext.RecordProbe(baseRef, _baseFinal, extra, DeltaSelector.GainWeight(extra, baseRef, _baseFinal));
+    }
+
+    /// <summary>The factor getProbability multiplies an item entry's weight with (treasure map chance), 1 for every other entry.</summary>
+    public static float SandboxFactor(LootContainer.LootEntry _entry)
+    {
+        ItemClass itemClass = _entry.item?.itemValue?.ItemClass;
+        return _entry.item != null && itemClass != null && !itemClass.ItemTags.IsEmpty ? LootContainer.GetSandboxProb(itemClass) : 1f;
     }
 
     private static CacheEntry EvaluateMembers(MergeableClass _info, FastTags<TagGroup.Global> _tags, float _baseIn, float _percIn, SpawnTrace _trace)
@@ -254,18 +251,11 @@ internal static class MergeEngine
 
     // ----- getProbability audit -----------------------------------------------------------------
 
-    private enum ReplicaMode
-    {
-        Vanilla,
-        Party,
-        PartyForced
-    }
-
     /// <summary>
-    /// Audits one getProbability result of the opener inside a merge activation. Counts eligible calls (Summary) and,
-    /// at Detailed level, recomputes the vanilla value without side effects and checks the invariants:
-    /// party ≥ vanilla and party − vanilla = extra · b₀ for eligible entries, party = vanilla for all others,
-    /// dry run keeps vanilla.
+    /// Audits one getProbability result of the opener inside a merge activation (the opener's own draws; the planner's
+    /// probes and the bonus draws are not audited). Counts eligible calls (Summary) and, at Detailed level, recomputes
+    /// the vanilla value without side effects: the opener's draw is the game's own, so the replica must agree
+    /// (<c>primary_is_vanilla</c>), and the value of an entry must stay the same within a spawn.
     /// </summary>
     public static void AuditProbability(EntityPlayer _player, LootContainer.LootEntry _entry, float _lootstage, bool _ignoreLootProb, float _result)
     {
@@ -280,8 +270,7 @@ internal static class MergeEngine
         }
         SpawnTrace trace = MergeContext.Trace;
         FastTags<TagGroup.Global> tags = GameCatalog.EntryTags(_entry);
-        bool eligible = catalog.IsEligible(tags);
-        if (eligible)
+        if (catalog.IsEligible(tags))
         {
             trace.EligibleEntryCalls++;
         }
@@ -294,53 +283,23 @@ internal static class MergeEngine
             return;
         }
 
-        // Numbers of the progression evaluation that produced _result (read before the replications overwrite them).
-        bool hasProgression = MergeContext.LastProgressionValid;
-        float baseRef = MergeContext.LastBaseRef;
-        float baseFinal = MergeContext.LastBaseFinal;
-        float extra = MergeContext.LastExtra;
-
-        EntryTrace entry = trace.GetOrAddEntry(_entry, tags, eligible);
+        EntryTrace entry = trace.GetOrAddEntry(_entry);
         entry.Calls++;
         if (!entry.Evaluated)
         {
             entry.Evaluated = true;
             entry.FirstResult = _result;
-            if (hasProgression)
+            float replicated = Replicate(_player, _entry, _lootstage, _ignoreLootProb);
+            trace.InvariantChecks++;
+            trace.PrimaryChecks++;
+            // A result of 0 with a positive replica means the entry's requirements failed (the replica skips them).
+            if (!DeltaSelector.AlmostEqual(replicated, _result) && !(_result == 0f && replicated > 0f))
             {
-                entry.BaseRef = baseRef;
-                entry.BaseFinal = baseFinal;
-                entry.Extra = extra;
+                entry.ReplicationMismatch = true;
+                trace.PrimaryMismatches++;
+                ModLog.Warning($"Audit replication of '{entry.Name}' differs from the game ({replicated} vs {_result}); getProbability may have changed.", "audit_replication");
+                trace.Violation("primary_is_vanilla", $"{entry.Name}: the game returned {_result}, the vanilla formula gives {replicated}");
             }
-            entry.Vanilla = Replicate(_player, _entry, _lootstage, _ignoreLootProb, ReplicaMode.Vanilla);
-            if (MergeContext.DryRun)
-            {
-                entry.Party = Replicate(_player, _entry, _lootstage, _ignoreLootProb, ReplicaMode.PartyForced);
-                trace.InvariantChecks++;
-                if (!DeltaSelector.AlmostEqual(_result, entry.Vanilla) && !(_result == 0f && entry.Vanilla > 0f))
-                {
-                    trace.Violation("dry_run_keeps_vanilla", $"{entry.Name}: result {_result} != vanilla {entry.Vanilla}");
-                }
-            }
-            else
-            {
-                float replicated = Replicate(_player, _entry, _lootstage, _ignoreLootProb, ReplicaMode.Party);
-                entry.Party = _result;
-                if (!DeltaSelector.AlmostEqual(replicated, _result))
-                {
-                    if (_result == 0f && replicated > 0f)
-                    {
-                        entry.RequirementsFailed = true;
-                        entry.Party = replicated;
-                    }
-                    else
-                    {
-                        entry.ReplicationMismatch = true;
-                        ModLog.Warning($"Audit replication of '{entry.Name}' differs from the game ({replicated} vs {_result}); getProbability may have changed.", "audit_replication");
-                    }
-                }
-            }
-            CheckEntry(trace, entry);
             return;
         }
 
@@ -357,38 +316,6 @@ internal static class MergeEngine
         }
     }
 
-    private static void CheckEntry(SpawnTrace _trace, EntryTrace _entry)
-    {
-        if (_entry.ReplicationMismatch || _entry.Checked)
-        {
-            return;
-        }
-        _entry.Checked = true;
-        _trace.InvariantChecks++;
-        if (!_entry.Eligible)
-        {
-            if (!DeltaSelector.AlmostEqual(_entry.Party, _entry.Vanilla))
-            {
-                _trace.Violation("non_learning_unchanged", $"{_entry.Name} [{_entry.Tags}]: party {_entry.Party} != vanilla {_entry.Vanilla}");
-            }
-            return;
-        }
-        if (!DeltaSelector.AlmostLessOrEqual(_entry.Vanilla, _entry.Party))
-        {
-            _trace.Violation("party_ge_vanilla", $"{_entry.Name}: party {_entry.Party} < vanilla {_entry.Vanilla}");
-        }
-        // party − vanilla must be exactly the extra counted at the entry's base before the progression evaluation.
-        if (!float.IsNaN(_entry.Extra) && _entry.BaseRef > 0f && _entry.BaseFinal > 0f)
-        {
-            double expectedGain = (double)_entry.Extra * _entry.BaseRef;
-            double gain = (double)_entry.Party - _entry.Vanilla;
-            if (Math.Abs(gain - expectedGain) > Math.Max(1e-5, Math.Abs(_entry.Party) * 1e-4))
-            {
-                _trace.Violation("gain_matches_extra", $"{_entry.Name}: party - vanilla = {gain} but extra * b0 = {expectedGain}");
-            }
-        }
-    }
-
     /// <summary>True when vanilla getProbability runs the LootProb effect evaluation for this entry.</summary>
     public static bool UsesLootProb(LootContainer.LootEntry _entry, bool _ignoreLootProb)
     {
@@ -402,20 +329,16 @@ internal static class MergeEngine
 
     /// <summary>
     /// Re-evaluates the vanilla probability formula of LootContainer.getProbability without its requirement check
-    /// (requirements roll random numbers, which must not be consumed twice). Restores CachedEventParam and the
+    /// (requirements may roll random numbers, which must not be consumed twice). Restores CachedEventParam and the
     /// opener's context, so the audit has no effect on the spawn.
     /// </summary>
-    private static float Replicate(EntityPlayer _player, LootContainer.LootEntry _entry, float _lootstage, bool _ignoreLootProb, ReplicaMode _mode)
+    private static float Replicate(EntityPlayer _player, LootContainer.LootEntry _entry, float _lootstage, bool _ignoreLootProb)
     {
-        bool suppress = MergeContext.SuppressMerge;
-        bool force = MergeContext.ForceApply;
         bool inAudit = MergeContext.InAudit;
         EventParamGuard.CopyAll(MinEventParams.CachedEventParam, replicaCachedSnapshot);
         EventParamGuard.CopyAll(_player.MinEventContext, openerSnapshot);
         try
         {
-            MergeContext.SuppressMerge = _mode == ReplicaMode.Vanilla;
-            MergeContext.ForceApply = _mode == ReplicaMode.PartyForced;
             MergeContext.InAudit = true;
             return ProbabilityWithoutRequirements(_player, _entry, _lootstage, _ignoreLootProb);
         }
@@ -426,15 +349,12 @@ internal static class MergeEngine
         }
         finally
         {
-            MergeContext.SuppressMerge = suppress;
-            MergeContext.ForceApply = force;
             MergeContext.InAudit = inAudit;
             EventParamGuard.CopyAll(openerSnapshot, _player.MinEventContext);
             EventParamGuard.CopyAll(replicaCachedSnapshot, MinEventParams.CachedEventParam);
         }
     }
-
-    /// <summary>Vanilla getProbability (V 3.3 b18) minus the leading HasRequirements check.</summary>
+    /// <summary>Vanilla getProbability (V 3.4) minus the leading HasRequirements check.</summary>
     public static float ProbabilityWithoutRequirements(EntityPlayer _player, LootContainer.LootEntry _entry, float _lootstage, bool _ignoreLootProb)
     {
         if (!string.IsNullOrEmpty(_entry.lootProbTemplate)

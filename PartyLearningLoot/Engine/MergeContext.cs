@@ -41,8 +41,12 @@ internal readonly struct ActivationToken
 
 /// <summary>
 /// Static state of the current merge activation. The hot path (every ProgressionClass.ModifyValue call in the game)
-/// reads <see cref="Active"/> first and returns immediately when no merge is running, so outside of a party spawn
-/// the mod costs one static field read per evaluation. Activations never nest; all fields are main-thread only.
+/// reads <see cref="Planning"/> first and returns immediately when no bonus plan is being made, so outside of a party
+/// spawn the mod costs one static field read per evaluation. Activations never nest; all fields are main-thread only.
+///
+/// The game's own loot weights are never changed. While the bonus planner probes an entry (<see cref="Planning"/>) the
+/// perk evaluations of the opener are observed: for each perk the members' versions are evaluated and the extra weight a
+/// party member's perk would add is recorded in <see cref="ProbeGain"/>.
 /// </summary>
 internal static class MergeContext
 {
@@ -50,10 +54,11 @@ internal static class MergeContext
 
     public static bool Active;
     public static bool InEval;
-    public static bool SuppressMerge;
-    public static bool ForceApply;
     public static bool InAudit;
     public static bool TraceAlways;
+
+    /// <summary>True while the planner probes one entry: only then are the opener's perk evaluations observed.</summary>
+    public static bool Planning;
     public static EntityPlayer Opener;
     public static int OwnerThread = -1;
     public static bool DryRun;
@@ -67,7 +72,7 @@ internal static class MergeContext
 
     // ----- the opener's current progression evaluation (Progression.ModifyValue for LootProb) -----
 
-    /// <summary>True while the opener's Progression.ModifyValue(LootProb) runs; only then do perk evaluations merge.</summary>
+    /// <summary>True while the opener's Progression.ModifyValue(LootProb) runs inside a probe; only then do perk evaluations merge.</summary>
     public static bool ProgressionActive;
 
     /// <summary>Base value before the progression evaluation (b₀): member bonuses are counted at this weight.</summary>
@@ -76,12 +81,36 @@ internal static class MergeContext
     /// <summary>Sum of the per-perk extras of the current progression evaluation.</summary>
     public static float ProgressionExtra;
 
-    // Numbers of the last finished progression evaluation, read by the getProbability audit.
-    public static bool LastProgressionValid;
-    public static float LastBaseRef;
-    public static float LastBaseFinal;
-    public static float LastExtra;
-    public static float LastApplied;
+    // ----- the probe in progress ---------------------------------------------------------------
+
+    /// <summary>Progression evaluations finished during the probe.</summary>
+    public static int ProbeFrames;
+
+    /// <summary>Extra weight of the probe: Σ extra · b₀ over its progression evaluations (before the sandbox factor).</summary>
+    public static float ProbeGain;
+
+    /// <summary>Σ extra of the probe.</summary>
+    public static float ProbeExtra;
+
+    public static float ProbeBaseRef = float.NaN;
+    public static float ProbeBaseFinal = float.NaN;
+
+    public static void BeginProbe()
+    {
+        ProbeFrames = 0;
+        ProbeGain = 0f;
+        ProbeExtra = 0f;
+        ProbeBaseRef = float.NaN;
+        ProbeBaseFinal = float.NaN;
+        EndProgression();
+        Planning = true;
+    }
+
+    public static void EndProbe()
+    {
+        Planning = false;
+        EndProgression();
+    }
 
     public static void BeginProgression(float _baseRef)
     {
@@ -96,22 +125,14 @@ internal static class MergeContext
         ProgressionExtra = 0f;
     }
 
-    public static void RecordProgression(float _baseRef, float _baseFinal, float _extra, float _applied)
+    /// <summary>Closes one progression evaluation of the probe: adds its extra weight and remembers the numbers.</summary>
+    public static void RecordProbe(float _baseRef, float _baseFinal, float _extra, float _gain)
     {
-        LastProgressionValid = true;
-        LastBaseRef = _baseRef;
-        LastBaseFinal = _baseFinal;
-        LastExtra = _extra;
-        LastApplied = _applied;
-    }
-
-    public static void ResetLastProgression()
-    {
-        LastProgressionValid = false;
-        LastBaseRef = 0f;
-        LastBaseFinal = 0f;
-        LastExtra = 0f;
-        LastApplied = 0f;
+        ProbeFrames++;
+        ProbeGain += _gain;
+        ProbeExtra += _extra;
+        ProbeBaseRef = _baseRef;
+        ProbeBaseFinal = _baseFinal;
     }
 
     /// <summary>Activates merging for the opener with the snapshot's members. Fails when already active or empty.</summary>
@@ -141,14 +162,22 @@ internal static class MergeContext
         ContainerName = _containerName;
         DryRun = _dryRun;
         InEval = false;
-        SuppressMerge = false;
-        ForceApply = false;
         InAudit = false;
+        Planning = false;
         EndProgression();
-        ResetLastProgression();
         Trace.Begin(_opener, _snapshot, _kind, _containerName, _dryRun);
         Active = true;
         return new ActivationToken(true);
+    }
+
+    /// <summary>
+    /// Lets the bonus engine watch the spawn that follows (the activation must be on). The seed of the engine's private
+    /// random streams: production derives it from a counter, the clock and the opener, never from the game's streams.
+    /// </summary>
+    public static void ArmBonus(int _seed)
+    {
+        GameCatalog catalog = GameCatalog.Current;
+        BonusEngine.Begin(catalog?.ListIndex, GameWeightSource.Instance, Trace.Bonus, _seed, DryRun);
     }
 
     public static void Deactivate(ActivationToken _token)
@@ -157,14 +186,13 @@ internal static class MergeContext
         {
             return;
         }
+        BonusEngine.End();
         Active = false;
         InEval = false;
-        SuppressMerge = false;
-        ForceApply = false;
         InAudit = false;
         TraceAlways = false;
+        Planning = false;
         EndProgression();
-        ResetLastProgression();
         Opener = null;
         OwnerThread = -1;
         for (int i = 0; i < MemberCount; i++)
@@ -178,7 +206,7 @@ internal static class MergeContext
     /// <summary>True when the context holds no state (checked after every spawn as an invariant).</summary>
     public static bool IsClean()
     {
-        return !Active && !InEval && !SuppressMerge && !ForceApply && !InAudit && !TraceAlways && !ProgressionActive && Opener == null && MemberCount == 0;
+        return !Active && !InEval && !InAudit && !TraceAlways && !Planning && !ProgressionActive && Opener == null && MemberCount == 0 && BonusEngine.IsIdle;
     }
 
     /// <summary>Emergency reset (world shutdown, reload).</summary>

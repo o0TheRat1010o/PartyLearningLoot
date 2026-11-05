@@ -11,7 +11,11 @@ namespace PartyLearningLoot.Core;
 /// </summary>
 public static class AuditRecords
 {
-    public const int SchemaVersion = 1;
+    /// <summary>
+    /// 2: the party bonus (mod 2.0) replaced the changed weights: spawn records carry a "bonus" object (plans, draws, items it
+    /// added), no "entries" and no "extra_applications". Schema 1 is the record format of mod 1.x.
+    /// </summary>
+    public const int SchemaVersion = 2;
 
     public const string SessionStart = "session_start";
     public const string SessionEnd = "session_end";

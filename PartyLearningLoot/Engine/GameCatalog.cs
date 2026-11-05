@@ -81,6 +81,9 @@ internal sealed class GameCatalog
     public DateTime BuiltUtc { get; }
     public bool IsEmpty => Data.MergedTags.Count == 0 || mergeable.Count == 0;
 
+    /// <summary>The loot lists (container lists and groups) that hold entries the party bonus applies to.</summary>
+    public LootListIndex ListIndex { get; }
+
     private GameCatalog(LearningCatalog _data, Dictionary<ProgressionClass, MergeableClass> _mergeable)
     {
         Data = _data;
@@ -91,6 +94,94 @@ internal sealed class GameCatalog
         MagazineCategoryMask = ParseKnown(new[] { LearningCatalogBuilder.MagazineCategoryTag });
         BookCategoryMask = ParseKnown(new[] { LearningCatalogBuilder.BookCategoryTag });
         BuiltUtc = DateTime.UtcNow;
+        ListIndex = BuildListIndex();
+    }
+
+    /// <summary>Indexes every container list and loot group that has at least one entry the party rule applies to.</summary>
+    private LootListIndex BuildListIndex()
+    {
+        var lists = new List<KeyValuePair<string, List<LootContainer.LootEntry>>>();
+        var declaredAll = new HashSet<string>(StringComparer.Ordinal);
+        foreach (KeyValuePair<string, LootContainer> container in LootContainer.lootContainers)
+        {
+            lists.Add(new KeyValuePair<string, List<LootContainer.LootEntry>>(container.Value.Name ?? container.Key, container.Value.itemsToSpawn));
+        }
+        foreach (KeyValuePair<string, LootContainer.LootGroup> group in LootContainer.lootGroups)
+        {
+            string name = GroupListName(group.Key);
+            lists.Add(new KeyValuePair<string, List<LootContainer.LootEntry>>(name, group.Value.items));
+            if (group.Value.minCount < 0)
+            {
+                declaredAll.Add(name);
+            }
+        }
+        return LootListIndex.Build(lists, entry => IsEligible(EntryTags(entry)), declaredAll.Contains);
+    }
+
+    /// <summary>The name a group's entry list carries in the audit log ("group:" like the entries that reference the group).</summary>
+    public static string GroupListName(string _group)
+    {
+        return "group:" + _group;
+    }
+    private string sampleContainer;
+    private bool sampleResolved;
+
+    /// <summary>
+    /// A container whose loot lists hold many entries the party bonus applies to (its own list and the groups it references
+    /// directly); used by the live checks as a sample. Null when no container has any.
+    /// </summary>
+    public string SampleContainer
+    {
+        get
+        {
+            if (!sampleResolved)
+            {
+                sampleContainer = FindSampleContainer();
+                sampleResolved = true;
+            }
+            return sampleContainer;
+        }
+    }
+
+    /// <summary>Containers that hold test or editor content or are filled by Twitch events, no sample of normal play.</summary>
+    private static bool IsDevelopmentContainer(string _name)
+    {
+        return _name != null && (_name.StartsWith("twitch_", StringComparison.OrdinalIgnoreCase)
+                                 || _name.StartsWith("prefabEditor", StringComparison.OrdinalIgnoreCase)
+                                 || _name.StartsWith("test", StringComparison.OrdinalIgnoreCase)
+                                 || _name.EndsWith("TestLoot", StringComparison.OrdinalIgnoreCase)
+                                 || _name.StartsWith("player", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private string FindSampleContainer()
+    {
+        string best = null;
+        int bestScore = 0;
+        foreach (LootContainer container in LootContainer.lootContainers.Values)
+        {
+            if (IsDevelopmentContainer(container.Name))
+            {
+                continue;
+            }
+            int score = 0;
+            if (ListIndex.TryGet(container.itemsToSpawn, out LootListInfo own))
+            {
+                score += own.EligibleCount;
+            }
+            foreach (LootContainer.LootEntry entry in container.itemsToSpawn)
+            {
+                if (entry?.group != null && ListIndex.TryGet(entry.group.items, out LootListInfo nested))
+                {
+                    score += nested.EligibleCount;
+                }
+            }
+            if (score > bestScore || (score == bestScore && score > 0 && string.CompareOrdinal(container.Name, best) < 0))
+            {
+                best = container.Name;
+                bestScore = score;
+            }
+        }
+        return best;
     }
 
     /// <summary>Builds a new catalog from the loaded game data and makes it current.</summary>
@@ -332,6 +423,26 @@ internal sealed class GameCatalog
                 Visit(entry, container.Key);
             }
         }
+        foreach (LootListInfo list in ListIndex.Lists)
+        {
+            result.Lists++;
+            if (list.DeclaredAll)
+            {
+                result.AllLists++;
+            }
+            else if (list.PickProblem != null)
+            {
+                result.ListsWithRequirementProblem++;
+            }
+            else if (list.HasForceProb)
+            {
+                result.ListsWithForceProb++;
+            }
+            else
+            {
+                result.PickLists++;
+            }
+        }
         return result;
     }
 
@@ -414,4 +525,12 @@ internal sealed class LootScanResult
     public int EligibleGroupRefs;
     public int Mixed;
     public readonly List<string> MixedExamples = new List<string>();
+
+    /// <summary>Lists with entries the bonus applies to: pick lists, lists where every entry is rolled on its own (count="all"),
+    /// and lists the bonus leaves alone (random-roll requirements; independent entries inside a pick list).</summary>
+    public int Lists;
+    public int PickLists;
+    public int AllLists;
+    public int ListsWithForceProb;
+    public int ListsWithRequirementProblem;
 }

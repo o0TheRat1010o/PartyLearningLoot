@@ -6,8 +6,8 @@ using PartyLearningLoot.Engine;
 namespace PartyLearningLoot.Patches;
 
 /// <summary>
-/// Activates the merge context for a LootManager spawn when the opener is in a party with at least one active member.
-/// Everything else (no scope, no party, setting off, breaker open) leaves the spawn untouched.
+/// Activates the merge context for a LootManager spawn when the opener is in a party with at least one active member and
+/// arms the bonus engine for it. Everything else (no scope, no party, setting off, breaker open) leaves the spawn untouched.
 /// </summary>
 internal static class LootContainerSpawnPatch
 {
@@ -20,16 +20,22 @@ internal static class LootContainerSpawnPatch
         {
             return;   // not a container/bag opened through LootManager: never ours
         }
+        ActivationToken token = default;
         try
         {
             string reason = Decide(scope, player, out PartySnapshot snapshot);
             string container = scope.ContainerName ?? __instance?.Name;
             if (reason == null)
             {
-                __state = MergeContext.Activate(player, snapshot, scope.Kind, container, PartyLearningLootMod.Settings.DryRun);
-                if (!__state.Activated)
+                token = MergeContext.Activate(player, snapshot, scope.Kind, container, PartyLearningLootMod.Settings.DryRun);
+                if (!token.Activated)
                 {
                     reason = "activation_failed";
+                }
+                else
+                {
+                    MergeContext.ArmBonus(BonusEngine.NextSeed(player.entityId));
+                    __state = token;
                 }
             }
             if (reason != null)
@@ -40,6 +46,7 @@ internal static class LootContainerSpawnPatch
         catch (Exception e)
         {
             MergeEngine.RegisterError("spawn_prefix", __instance?.Name, e);
+            MergeContext.Deactivate(token);
             __state = default;
         }
     }
@@ -62,6 +69,12 @@ internal static class LootContainerSpawnPatch
         try
         {
             trace.Stop();
+            trace.AbsorbBonusChecks();
+            trace.InvariantChecks++;
+            if (!BonusEngine.IsBalanced)
+            {
+                trace.Violation("context_clean", $"the bonus engine still holds state after the spawn (depth {BonusEngine.Depth})");
+            }
             CountMergedKinds(spawnedItems, out int learningItems, out int otherLootItems);
             RuntimeStats.CountMerged(trace, learningItems, otherLootItems);
             if (AuditLog.Summary)
@@ -78,7 +91,7 @@ internal static class LootContainerSpawnPatch
             MergeContext.Deactivate(__state);
             spawnedItems = null;
         }
-        if (AuditLog.Detailed && !MergeContext.IsClean())
+        if (!MergeContext.IsClean())
         {
             trace.Violation("context_clean", "merge context still holds state after the spawn");
             MergeContext.Reset();

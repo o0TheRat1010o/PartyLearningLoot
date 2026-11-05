@@ -4,11 +4,11 @@ using PartyLearningLoot.Engine;
 namespace PartyLearningLoot.Patches;
 
 /// <summary>
-/// Hooks the per-perk evaluation inside the opener's progression evaluation. The prefix (first) captures the values
-/// before the perk, the postfix (last) lets <see cref="MergeEngine.MergeClass"/> evaluate the members and record the
-/// party's extra for this perk. The opener's own evaluation is the untouched original call and its values are never
-/// written here; the extra is applied once at the end of the progression (<see cref="ProgressionModifyValuePatch"/>).
-/// Outside a merge activation the prefix returns after one static read.
+/// Hooks the per-perk evaluation inside the opener's progression evaluation of a probe. The prefix (first) captures the
+/// values before the perk, the postfix (last) lets <see cref="MergeEngine.MergeClass"/> evaluate the members and record
+/// the party's extra for this perk. The opener's own evaluation is the untouched original call and its values are never
+/// written here; the extra becomes a weight at the end of the progression (<see cref="ProgressionModifyValuePatch"/>).
+/// Outside a probe the prefix returns after one static read.
 /// </summary>
 internal static class ProgressionClassModifyValuePatch
 {

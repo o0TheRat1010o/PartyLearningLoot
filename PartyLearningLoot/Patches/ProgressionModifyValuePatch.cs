@@ -5,22 +5,22 @@ using PartyLearningLoot.Engine;
 namespace PartyLearningLoot.Patches;
 
 /// <summary>
-/// Frames the opener's progression evaluation for LootProb inside a merge activation: the prefix (first) records the
-/// base before any perk (b₀) and opens the frame, the postfix (last) adds the party's accumulated extra once, scaled to
-/// b₀, and the finalizer always closes the frame (also when vanilla throws).
+/// Frames the opener's progression evaluation for LootProb while the bonus planner probes a loot entry: the prefix
+/// (first) records the base before any perk (b₀) and opens the frame, the postfix (last) turns the extra the members'
+/// perks would add into a weight and hands it to the planner, and the finalizer always closes the frame (also when
+/// vanilla throws). The evaluation's own result is never changed.
 /// </summary>
 internal static class ProgressionModifyValuePatch
 {
     public static void Prefix(Progression __instance, PassiveEffects _effect, ref float _baseVal, out bool __state)
     {
         __state = false;
-        if (!MergeContext.Active)
+        if (!MergeContext.Planning)
         {
             return;
         }
         if (_effect != PassiveEffects.LootProb
             || MergeContext.InEval
-            || MergeContext.SuppressMerge
             || MergeContext.ProgressionActive
             || !ReferenceEquals(__instance.parent, MergeContext.Opener)
             || Thread.CurrentThread.ManagedThreadId != MergeContext.OwnerThread)
@@ -31,7 +31,7 @@ internal static class ProgressionModifyValuePatch
         __state = true;
     }
 
-    public static void Postfix(ref float _baseVal, ref float _percVal, bool __state, bool __runOriginal)
+    public static void Postfix(float _baseVal, bool __state, bool __runOriginal)
     {
         if (!__state || !__runOriginal)
         {
@@ -39,11 +39,11 @@ internal static class ProgressionModifyValuePatch
         }
         try
         {
-            MergeEngine.ApplyProgressionExtra(ref _percVal, _baseVal);
+            MergeEngine.RecordGain(_baseVal);
         }
         catch (Exception e)
         {
-            MergeEngine.RegisterError("apply_extra", null, e);
+            MergeEngine.RegisterError("record_gain", null, e);
         }
     }
 

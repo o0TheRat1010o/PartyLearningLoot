@@ -24,32 +24,20 @@ internal sealed class PerkTrace
     public int Calls;
 }
 
-/// <summary>Vanilla versus party probability of one loot entry within a spawn (Detailed level).</summary>
+/// <summary>What the opener's own draws asked of one loot entry within a spawn (Detailed level).</summary>
 internal sealed class EntryTrace
 {
     public string Name;
-    public bool IsGroup;
-    public string Tags;
-    public bool Eligible;
     public int Calls;
     public float FirstResult = float.NaN;
-    public float Party = float.NaN;
-    public float Vanilla = float.NaN;
     public bool Evaluated;
-
-    /// <summary>Progression numbers of the first call: base before/after the progression and the summed extra.</summary>
-    public float BaseRef = float.NaN;
-    public float BaseFinal = float.NaN;
-    public float Extra = float.NaN;
-    public bool RequirementsFailed;
     public bool Unstable;
     public bool ReplicationMismatch;
-    public bool Checked;
 }
 
 /// <summary>
 /// Collects everything about the current merge activation that the audit log reports: inputs, per-perk decisions,
-/// per-entry vanilla/party values, invariants, spawned items and timing. Reused between activations.
+/// the bonus (plans, draws, items it added), invariants, spawned items and timing. Reused between activations.
 /// </summary>
 internal sealed class SpawnTrace
 {
@@ -58,6 +46,7 @@ internal sealed class SpawnTrace
 
     public readonly List<PerkTrace> Perks = new List<PerkTrace>();
     public readonly List<string> ViolationRules = new List<string>();
+    public readonly BonusTrace Bonus = new BonusTrace();
 
     public int OpenerId;
     public string OpenerName;
@@ -72,15 +61,14 @@ internal sealed class SpawnTrace
     public int CacheHits;
     public int MemberWins;
     public int PerksRaised;
-    public int ExtraApplications;
     public int Errors;
     public float MaxExtra;
     public int EligibleEntryCalls;
     public int NonEligibleEntryCalls;
+    public int PrimaryChecks;
+    public int PrimaryMismatches;
     public int InvariantChecks;
     public int InvariantViolations;
-
-    public IReadOnlyDictionary<LootContainer.LootEntry, EntryTrace> Entries => entries;
 
     public double ElapsedMs => watch.Elapsed.TotalMilliseconds;
 
@@ -91,6 +79,7 @@ internal sealed class SpawnTrace
         entries.Clear();
         Perks.Clear();
         ViolationRules.Clear();
+        Bonus.Reset(AuditLog.Detailed, _dryRun);
         OpenerId = _opener.entityId;
         OpenerName = PartySnapshot.DisplayName(_opener);
         Kind = _kind;
@@ -103,11 +92,12 @@ internal sealed class SpawnTrace
         CacheHits = 0;
         MemberWins = 0;
         PerksRaised = 0;
-        ExtraApplications = 0;
         Errors = 0;
         MaxExtra = 0f;
         EligibleEntryCalls = 0;
         NonEligibleEntryCalls = 0;
+        PrimaryChecks = 0;
+        PrimaryMismatches = 0;
         InvariantChecks = 0;
         InvariantViolations = 0;
     }
@@ -117,23 +107,29 @@ internal sealed class SpawnTrace
         watch.Stop();
     }
 
-    public EntryTrace GetOrAddEntry(LootContainer.LootEntry _entry, FastTags<TagGroup.Global> _tags, bool _eligible)
+    public EntryTrace GetOrAddEntry(LootContainer.LootEntry _entry)
     {
         if (!entries.TryGetValue(_entry, out EntryTrace trace))
         {
-            trace = new EntryTrace
-            {
-                Name = GameCatalog.EntryName(_entry),
-                IsGroup = _entry.group != null,
-                Tags = string.Join(",", _tags.GetTagNames()),
-                Eligible = _eligible
-            };
+            trace = new EntryTrace { Name = GameCatalog.EntryName(_entry) };
             entries.Add(_entry, trace);
         }
         return trace;
     }
 
-    /// <summary>Records an invariant violation (Detailed) and returns false so callers can write "check || Violation()".</summary>
+    /// <summary>Takes over the invariant results the bonus engine collected while it planned and drew.</summary>
+    public void AbsorbBonusChecks()
+    {
+        InvariantChecks += Bonus.InvariantChecks;
+        Bonus.InvariantChecks = 0;
+        foreach (KeyValuePair<string, string> violation in Bonus.Violations)
+        {
+            Violation(violation.Key, violation.Value);
+        }
+        Bonus.Violations.Clear();
+    }
+
+    /// <summary>Records an invariant violation and returns false so callers can write "check || Violation()".</summary>
     public bool Violation(string _rule, string _detail)
     {
         InvariantViolations++;
@@ -174,7 +170,6 @@ internal sealed class SpawnTrace
             .Prop("cache_hits", CacheHits)
             .Prop("member_wins", MemberWins)
             .Prop("perks_raised", PerksRaised)
-            .Prop("extra_applications", ExtraApplications)
             .Prop("max_extra", MaxExtra)
             .Prop("eligible_calls", EligibleEntryCalls)
             .Prop("errors", Errors);
@@ -183,13 +178,18 @@ internal sealed class SpawnTrace
             record.Prop("exception", _exception.GetType().Name + ": " + _exception.Message);
         }
 
+        Bonus.Write(record);
         WriteItems(record, _items, _detailed);
 
         if (_detailed)
         {
             WriteInputs(record);
             WritePerks(record);
-            WriteEntries(record);
+            record.BeginObject("primary")
+                .Prop("checked", PrimaryChecks)
+                .Prop("mismatches", PrimaryMismatches)
+                .Prop("non_eligible_calls", NonEligibleEntryCalls)
+                .EndObject();
             record.BeginObject("invariants")
                 .Prop("checked", InvariantChecks)
                 .Prop("violations", InvariantViolations)
@@ -314,55 +314,6 @@ internal sealed class SpawnTrace
             _record.Prop("extra", perk.Extra).EndObject();
         }
         _record.EndArray();
-    }
-
-    private void WriteEntries(JsonLineWriter _record)
-    {
-        _record.BeginArray("entries");
-        int nonEligible = 0;
-        int nonEligibleChanged = 0;
-        foreach (EntryTrace entry in entries.Values)
-        {
-            if (!entry.Eligible)
-            {
-                nonEligible++;
-                if (entry.Evaluated && !DeltaSelector.AlmostEqual(entry.Party, entry.Vanilla))
-                {
-                    nonEligibleChanged++;
-                }
-                continue;
-            }
-            _record.BeginObject()
-                .Prop("entry", entry.Name)
-                .Prop("group", entry.IsGroup)
-                .Prop("tags", entry.Tags)
-                .Prop("calls", entry.Calls)
-                .Prop("vanilla", entry.Vanilla)
-                .Prop("party", entry.Party);
-            if (!float.IsNaN(entry.Extra))
-            {
-                _record.Prop("b0", entry.BaseRef).Prop("b_final", entry.BaseFinal).Prop("extra", entry.Extra);
-            }
-            if (entry.RequirementsFailed)
-            {
-                _record.Prop("req_failed", true);
-            }
-            if (entry.Unstable)
-            {
-                _record.Prop("unstable", true);
-            }
-            if (entry.ReplicationMismatch)
-            {
-                _record.Prop("replication_mismatch", true);
-            }
-            _record.EndObject();
-        }
-        _record.EndArray();
-        _record.BeginObject("non_eligible")
-            .Prop("entries", nonEligible)
-            .Prop("calls", NonEligibleEntryCalls)
-            .Prop("changed", nonEligibleChanged)
-            .EndObject();
     }
 
     private sealed class EntryComparer : IEqualityComparer<LootContainer.LootEntry>

@@ -5,27 +5,34 @@ using PartyLearningLoot.Engine;
 namespace PartyLearningLoot.Patches;
 
 /// <summary>
-/// Audit-only patch on LootContainer.getProbability: inside a merge activation the prefix clears the numbers of the
-/// previous progression evaluation, the postfix reports the final probability of every entry the opener evaluates
-/// (and, at Detailed level, the exact vanilla value). It never changes the result.
+/// Patch on LootContainer.getProbability. The prefix gives the game's draw code the bonus weights while the bonus
+/// engine draws from its synthetic list (and only then; every other call runs the original untouched). The postfix is
+/// an audit of the opener's own draws inside a merge activation: it counts them and, at Detailed level, checks the
+/// result against the vanilla formula. It never changes a result.
 /// </summary>
-internal static class GetProbabilityAuditPatch
+internal static class GetProbabilityPatch
 {
-    public static void Prefix(EntityPlayer _player)
+    public static bool Prefix(LootContainer.LootEntry _item, ref float __result)
     {
-        if (MergeContext.Active && !MergeContext.InAudit && !MergeContext.InEval && ReferenceEquals(_player, MergeContext.Opener))
+        if (!BonusEngine.Armed)
         {
-            MergeContext.ResetLastProgression();
+            return true;
         }
+        if (BonusEngine.TryOverride(_item, out float weight))
+        {
+            __result = weight;
+            return false;
+        }
+        return true;
     }
 
     public static void Postfix(EntityPlayer _player, LootContainer.LootEntry _item, float _lootstage, bool _ignoreLootProb, float __result)
     {
         if (!MergeContext.Active
-            || MergeContext.InEval
-            || MergeContext.SuppressMerge
+            || BonusEngine.InFlush
             || MergeContext.InAudit
             || MergeContext.Kind == LootOpenKind.Simulate
+            || MergeContext.Kind == LootOpenKind.Explain
             || !ReferenceEquals(_player, MergeContext.Opener)
             || !AuditLog.Summary)
         {

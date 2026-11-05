@@ -130,8 +130,23 @@ internal static class PatchInstaller
                 {
                     typeof(EntityPlayer), typeof(LootContainer.LootEntry), typeof(float), typeof(bool)
                 }),
-                Prefix = Method(typeof(GetProbabilityAuditPatch), nameof(GetProbabilityAuditPatch.Prefix)),
-                Postfix = Method(typeof(GetProbabilityAuditPatch), nameof(GetProbabilityAuditPatch.Postfix)),
+                Prefix = Method(typeof(GetProbabilityPatch), nameof(GetProbabilityPatch.Prefix)),
+                Postfix = Method(typeof(GetProbabilityPatch), nameof(GetProbabilityPatch.Postfix)),
+                PrefixPriority = Priority.First,
+                PostfixPriority = Priority.Last
+            },
+            new PatchSpec
+            {
+                Label = "LootContainer.SpawnLootItemsFromList",
+                Resolve = () => AccessTools.DeclaredMethod(typeof(LootContainer), nameof(LootContainer.SpawnLootItemsFromList), new[]
+                {
+                    typeof(GameRandom), typeof(List<LootContainer.LootEntry>), typeof(int), typeof(float), typeof(List<ItemStack>),
+                    typeof(int).MakeByRefType(), typeof(float), typeof(float), typeof(string), typeof(EntityPlayer), fastTags,
+                    typeof(bool), typeof(bool), typeof(bool), typeof(bool), typeof(List<string>), typeof(bool)
+                }),
+                Prefix = Method(typeof(SpawnListPatch), nameof(SpawnListPatch.Prefix)),
+                Postfix = Method(typeof(SpawnListPatch), nameof(SpawnListPatch.Postfix)),
+                Finalizer = Method(typeof(SpawnListPatch), nameof(SpawnListPatch.Finalizer)),
                 PrefixPriority = Priority.First,
                 PostfixPriority = Priority.Last
             }

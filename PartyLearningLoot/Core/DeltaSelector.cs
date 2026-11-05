@@ -36,14 +36,15 @@ public readonly struct PerkMerge
 /// call of the same vanilla code with the member's own level and requirements yields Δ_member. The party adds
 /// <c>extra = max(0, max(Δ_member…) − Δ_opener)</c>: identical perks never stack, the strongest one counts.
 ///
-/// After all perks of the opener's progression evaluation the extras are applied once:
-/// <c>perc += Σextra · b₀ / b_final</c>, where b₀ is the base before the progression evaluation and b_final the base after
-/// it. Without vanilla's "complete" quirk (base_set 1 once a crafting skill reaches its maximum) b₀ = b_final and the
-/// rule is simply "perc + Σextra". With the quirk, member bonuses are counted at the entry's normal weight instead of
-/// being multiplied by the quirk base, independent of the order in which the perks are evaluated.
+/// The extras of one progression evaluation add up to the party gain of the loot entry, <c>Σextra · b₀</c>
+/// (see <see cref="GainWeight"/>), where b₀ is the base before the progression evaluation. Without vanilla's "complete"
+/// quirk (base_set 1 once a crafting skill reaches its maximum) this is what one more person with the perk would add to
+/// the weight; with the quirk, member bonuses are counted at the entry's normal weight instead of being multiplied by the
+/// quirk base, independent of the order in which the perks are evaluated. The gain is only observed: the game's own
+/// weights are never changed, the bonus draws of the party are made separately (see <see cref="BonusMath"/>).
 ///
-/// Properties: never below vanilla (extra ≥ 0, bases &gt; 0), deterministic, ties keep vanilla, members without a
-/// positive bonus never change anything, singleplayer/no party is exactly vanilla.
+/// Properties: never negative (extra ≥ 0, bases &gt; 0), deterministic, ties keep vanilla, members without a positive
+/// bonus never change anything, singleplayer/no party has no gain.
 /// </summary>
 public static class DeltaSelector
 {
@@ -89,20 +90,18 @@ public static class DeltaSelector
     }
 
     /// <summary>
-    /// Applies the accumulated extra of one progression evaluation. Returns the new perc; unchanged when there is no
-    /// extra or a base is not positive (a zero-weight entry stays zero, as it would for any single player).
+    /// The weight the accumulated extra of one progression evaluation adds to a loot entry: <c>extra · b₀</c>, i.e. the
+    /// member bonus counted at the entry's weight before the progression evaluation. Zero when there is no extra or a base
+    /// is not positive (a zero-weight entry stays zero, as it would for any single player). The base after the evaluation
+    /// only has to be positive: it does not scale the bonus, so vanilla's "complete" quirk cannot multiply it.
     /// </summary>
-    public static float ApplyExtra(float _perc, float _extra, float _baseRef, float _baseFinal)
+    public static float GainWeight(float _extra, float _baseRef, float _baseFinal)
     {
-        if (!(_extra > 0f) || !IsFinite(_extra) || !IsFinite(_perc) || !IsFinite(_baseRef) || !IsFinite(_baseFinal) || !(_baseRef > 0f) || !(_baseFinal > 0f))
+        if (!(_extra > 0f) || !IsFinite(_extra) || !IsFinite(_baseRef) || !IsFinite(_baseFinal) || !(_baseRef > 0f) || !(_baseFinal > 0f))
         {
-            return _perc;
+            return 0f;
         }
-        if (_baseRef == _baseFinal)
-        {
-            return _perc + _extra;
-        }
-        return _perc + _extra * (_baseRef / _baseFinal);
+        return _extra * _baseRef;
     }
 
     public static bool IsFinite(float _value)
